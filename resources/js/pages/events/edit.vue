@@ -8,36 +8,19 @@ import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { useForm } from '@inertiajs/vue3';
 import InputError from "@/components/InputError.vue";
-import { onMounted } from 'vue';
+// No need for onMounted import
 
 const props = defineProps({
     event: Object,
 });
 
 const form = useForm({
-    name: '',
-    from_datetime: '',
-    to_datetime: '',
-    location: '',
+    name: props.event?.name || '',
+    from_datetime: formatDateTimeForInput(props.event?.from_datetime),
+    to_datetime: formatDateTimeForInput(props.event?.to_datetime),
+    location: props.event?.location || '',
 });
 
-// Initialize form with event data
-onMounted(() => {
-    if (props.event) {
-        form.name = props.event.name || '';
-        
-        // Format datetime fields for input
-        if (props.event.from_datetime) {
-            form.from_datetime = formatDateTimeForInput(props.event.from_datetime);
-        }
-        
-        if (props.event.to_datetime) {
-            form.to_datetime = formatDateTimeForInput(props.event.to_datetime);
-        }
-        
-        form.location = props.event.location || '';
-    }
-});
 
 // Helper function to format datetime for input fields
 function formatDateTimeForInput(dateTimeString: string): string {

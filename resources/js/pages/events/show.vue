@@ -5,7 +5,7 @@ import { Head } from '@inertiajs/vue3';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { router } from '@inertiajs/vue3';
-import { formatDate } from '@/utils/format';
+import { formatDate } from '@/utils';
 
 const props = defineProps({
     event: Object,
