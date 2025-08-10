@@ -135,7 +135,9 @@ processMenuItems();
 // Define breadcrumb items
 const breadcrumbItems = computed(() => {
   return [
-    { title: 'Restaurants', href: route('restaurants.index') },
+    { title: 'Restaurants', 
+      href: route('restaurants.index') 
+     },
     { title: props.restaurant.name, href: route('restaurants.show', props.restaurant.id) },
     { title: 'Menu', href: route('menu.index', props.restaurant.id) },
   ] as BreadcrumbItemType[];

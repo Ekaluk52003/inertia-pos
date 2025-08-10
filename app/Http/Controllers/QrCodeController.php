@@ -47,7 +47,7 @@ class QrCodeController extends Controller
         $this->authorize('create', [QrCode::class, $restaurant]);
 
         $validated = $request->validate([
-            'table_number' => 'required|integer|min:1',
+            'table_number' => 'required|string|min:1',
         ]);
 
         // Generate a unique code for the QR code

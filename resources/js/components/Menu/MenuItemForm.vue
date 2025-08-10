@@ -33,6 +33,8 @@ interface AttributeValue {
 interface MenuItemAttribute {
   name: string;
   values: AttributeValue[];
+  required?: boolean;
+  multiple?: boolean;
 }
 
 interface MenuItem {
@@ -92,6 +94,8 @@ const addAttribute = () => {
     attributes.value.push({
       name: newAttributeName.value.trim(),
       values: [],
+      required: true, // Default to required
+      multiple: false, // Default to single selection
     });
     newAttributeName.value = '';
   }
@@ -367,6 +371,27 @@ const submit = () => {
                 >
                   Remove
                 </Button>
+              </div>
+              
+              <!-- Option settings -->
+              <div class="flex items-center gap-4">
+                <div class="flex items-center space-x-2">
+                  <Switch 
+                    :id="`required-${attrIndex}`" 
+                    v-model:checked="attribute.required" 
+                    :disabled="form.processing"
+                  />
+                  <Label :for="`required-${attrIndex}`">Required</Label>
+                </div>
+                
+                <div class="flex items-center space-x-2">
+                  <Switch 
+                    :id="`multiple-${attrIndex}`" 
+                    v-model:checked="attribute.multiple" 
+                    :disabled="form.processing"
+                  />
+                  <Label :for="`multiple-${attrIndex}`">Allow multiple selections</Label>
+                </div>
               </div>
               
               <!-- Add values to attribute -->

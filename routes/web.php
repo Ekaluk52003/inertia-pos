@@ -8,6 +8,8 @@ use App\Http\Controllers\MenuController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PublicController;
+
 use App\Http\Controllers\QrCodeController;
 use App\Http\Controllers\RestaurantController;
 use App\Http\Controllers\StaffController;
@@ -15,6 +17,16 @@ use App\Http\Controllers\StaffController;
 Route::get('/', function () {
     return Inertia::render('Welcome');
 })->name('home');
+
+Route::get('/public', function () {
+    return Inertia::render('Customer');
+})->name('public');
+
+
+
+
+
+
 
 Route::get('dashboard', function () {
     return Inertia::render('Dashboard');
@@ -97,7 +109,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 // Public routes for customers
 Route::prefix('public')->group(function () {
     // Menu access via QR code
-    Route::get('menu/{restaurantCode}/{tableCode}', [MenuController::class, 'publicMenu'])->name('public.menu');
+    Route::get('menu/{restaurantCode}/{tableCode}', [PublicController::class, 'publicMenu'])->name('public.menu');
     
     // Order creation
     Route::post('order/{restaurantCode}/{tableCode}', [OrderController::class, 'storeFromMenu'])->name('public.order.store');
