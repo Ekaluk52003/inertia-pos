@@ -27,13 +27,32 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+
+const breadcrumbs: BreadcrumbItem[] = [
+    {
+        title: 'Restaurants',
+        href: '/restaurants',
+    },
+    {
+        title: props.restaurant.name,
+        href: `/restaurants/${props.restaurant.id}`,
+    },
+    {
+        title: 'Menu',
+        href: `/restaurants/${props.restaurant.id}/menu`,
+    },
+    {
+        title: props.menuItem.name,
+        href: `/restaurants/${props.restaurant.id}/menu/${props.menuItem.id}/edit`,
+    },
+];
 </script>
 
 <template>
-  <AppLayout>
+  <AppLayout :breadcrumbs="breadcrumbs">
     <Head :title="`Edit ${menuItem.name} - ${restaurant.name}`" />
     
-    <div class="container py-6">
+    <div class="flex h-full flex-1 flex-col gap-4 rounded-xl p-4 overflow-x-auto">
       <div class="mb-6">
         <div class="flex items-center justify-between">
           <div>

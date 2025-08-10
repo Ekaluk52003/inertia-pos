@@ -13,21 +13,43 @@ defineProps<{
 </script>
 
 <template>
-    <Breadcrumb>
+    <Breadcrumb class="breadcrumb-clean">
         <BreadcrumbList>
             <template v-for="(item, index) in breadcrumbs" :key="index">
-                <BreadcrumbItem>
+                <BreadcrumbItem class="breadcrumb-item-clean">
                     <template v-if="index === breadcrumbs.length - 1">
-                        <BreadcrumbPage>{{ item.title }}</BreadcrumbPage>
+                        <BreadcrumbPage class="text-sm">{{ item.title }}</BreadcrumbPage>
                     </template>
                     <template v-else>
-                        <BreadcrumbLink as-child>
+                        <BreadcrumbLink as-child class="text-sm">
                             <Link :href="item.href ?? '#'">{{ item.title }}</Link>
                         </BreadcrumbLink>
                     </template>
                 </BreadcrumbItem>
-                <BreadcrumbSeparator v-if="index !== breadcrumbs.length - 1" />
+                <BreadcrumbSeparator v-if="index !== breadcrumbs.length - 1" class="mx-1">/</BreadcrumbSeparator>
             </template>
         </BreadcrumbList>
     </Breadcrumb>
 </template>
+
+<style scoped>
+.breadcrumb-clean :deep([data-slot="breadcrumb-list"]) {
+  display: flex;
+  align-items: center;
+  height: auto;
+  background-color: transparent;
+  border-radius: 0;
+  padding: 0;
+}
+
+.breadcrumb-item-clean :deep([data-slot="breadcrumb-item"]) {
+  height: auto;
+  padding: 0;
+  background-color: transparent;
+}
+
+.breadcrumb-clean :deep([data-slot="breadcrumb-separator"]) {
+  color: var(--muted-foreground);
+  margin: 0 0.25rem;
+}
+</style>

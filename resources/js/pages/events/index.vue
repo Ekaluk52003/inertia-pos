@@ -44,7 +44,7 @@ const breadcrumbs: BreadcrumbItem[] = [
         <div class="flex h-full flex-1 flex-col gap-4 rounded-xl p-4 overflow-x-auto">
             <div class="flex justify-between items-center">
                 <h1 class="text-2xl font-semibold">Events</h1>
-                <Button variant="default" as="a" href="/events/create">
+                <Button variant="default" class="cursor-pointer" @click="router.visit(route('events.create'))">
                     Create Event
                 </Button>
             </div>
@@ -67,13 +67,13 @@ const breadcrumbs: BreadcrumbItem[] = [
                             <TableCell>{{ moment(event.to_datetime).format('MMM D, YYYY h:mm A') }}</TableCell>
                             <TableCell>{{ event.location }}</TableCell>
                             <TableCell class="space-x-2">
-                                <Button variant="ghost" size="sm" as="a" :href="`/events/${event.id}`">
+                                <Button variant="ghost" size="sm" class="cursor-pointer" @click="router.visit(route('events.show', event.id))">
                                     View
                                 </Button>
-                                <Button variant="outline" size="sm" as="a" :href="`/events/${event.id}/edit`">
+                                <Button variant="outline" size="sm" class="cursor-pointer" @click="router.visit(route('events.edit', event.id))">
                                     Edit
                                 </Button>
-                                <Button variant="destructive" size="sm" @click="deleteEvent(event.id)">
+                                <Button variant="destructive" size="sm" class="cursor-pointer" @click="deleteEvent(event.id)">
                                     Delete
                                 </Button>
                             </TableCell>

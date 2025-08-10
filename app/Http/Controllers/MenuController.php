@@ -63,11 +63,15 @@ class MenuController extends Controller
             'is_available' => 'boolean',
             'description' => 'nullable|string',
             'image' => 'nullable|image|max:2048',
+            'image_url' => 'nullable|url|max:2048',
+            'options' => 'nullable|array',
         ]);
 
         if ($request->hasFile('image')) {
             $path = $request->file('image')->store('menu-images', 'public');
             $validated['image_path'] = $path;
+        } elseif ($request->filled('image_url')) {
+            $validated['image_path'] = $request->input('image_url');
         }
 
         $restaurant->menuItems()->create($validated);
@@ -109,16 +113,21 @@ class MenuController extends Controller
             'is_available' => 'boolean',
             'description' => 'nullable|string',
             'image' => 'nullable|image|max:2048',
+            'image_url' => 'nullable|url|max:2048',
+            'options' => 'nullable|array',
         ]);
 
         if ($request->hasFile('image')) {
-            // Delete old image if exists
-            if ($menu->image_path) {
+            // Delete old image if exists and it's not a URL
+            if ($menu->image_path && !filter_var($menu->image_path, FILTER_VALIDATE_URL)) {
                 Storage::disk('public')->delete($menu->image_path);
             }
             
             $path = $request->file('image')->store('menu-images', 'public');
             $validated['image_path'] = $path;
+        } elseif ($request->filled('image_url')) {
+            // If using a new image URL, update the path
+            $validated['image_path'] = $request->input('image_url');
         }
 
         $menu->update($validated);

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { 
   Table, 
@@ -18,8 +18,31 @@ import {
   CardHeader, 
   CardTitle 
 } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { PlusCircle, Pencil, Trash2, ToggleLeft, ToggleRight } from 'lucide-vue-next';
+import { Badge } from '@/components/ui/badge/index';
+import { 
+  PlusCircle, 
+  Pencil, 
+  Trash2, 
+  ToggleLeft, 
+  ToggleRight, 
+  ChefHat, 
+  ClipboardList, 
+  Menu as MenuIcon, 
+  QrCode, 
+  Settings, 
+  Users 
+} from 'lucide-vue-next';
+import type { BreadcrumbItemType, NavItem } from '@/types';
+
+interface AttributeValue {
+  name: string;
+  price: number;
+}
+
+interface MenuItemAttribute {
+  name: string;
+  values: AttributeValue[];
+}
 
 interface MenuItem {
   id: number;
@@ -29,6 +52,8 @@ interface MenuItem {
   price: number;
   category: string;
   is_available: boolean;
+  image_path?: string | null;
+  options?: MenuItemAttribute[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -46,11 +71,14 @@ interface Props {
 
 const props = defineProps<Props>();
 
-// Format currency
-const formatCurrency = (amount: number | string | null): string => {
-  // Convert to number and handle null/undefined
-  const numAmount = Number(amount || 0);
-  return '฿' + numAmount.toFixed(2);
+// Format currency for display
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB' }).format(amount);
+};
+
+// Format attribute value with price
+const formatAttributeValue = (value: AttributeValue) => {
+  return `${value.name}${value.price > 0 ? ' (+' + value.price + ')' : ''}`;
 };
 
 // Toggle menu item availability
@@ -103,13 +131,47 @@ const processMenuItems = () => {
 
 // Call the function to process menu items
 processMenuItems();
+
+// Define breadcrumb items
+const breadcrumbItems = computed(() => {
+  return [
+    { title: 'Restaurants', href: route('restaurants.index') },
+    { title: props.restaurant.name, href: route('restaurants.show', props.restaurant.id) },
+    { title: 'Menu', href: route('menu.index', props.restaurant.id) },
+  ] as BreadcrumbItemType[];
+});
+
+// Navigation items for the restaurant
+const navItems: NavItem[] = [
+  { title: 'Menu', icon: MenuIcon, href: route('menu.index', props.restaurant.id), isActive: true },
+  { title: 'Orders', icon: ClipboardList, href: route('orders.index', props.restaurant.id) },
+  { title: 'Kitchen', icon: ChefHat, href: route('kitchen.show', props.restaurant.id) },
+  { title: 'QR Codes', icon: QrCode, href: route('qrcodes.index', props.restaurant.id) },
+  { title: 'Staff', icon: Users, href: route('staff.index', props.restaurant.id) },
+  { title: 'Settings', icon: Settings, href: '#' }, // Will be implemented later
+];
 </script>
 
 <template>
-  <AppLayout>
+  <AppLayout :breadcrumbs="breadcrumbItems">
     <Head :title="`Menu - ${props.restaurant.name}`" />
     
-    <div class="container py-6">
+    <div class="flex h-full flex-1 flex-col gap-4 rounded-xl p-4 overflow-x-auto">  
+      <!-- Navigation Cards -->
+      <div class="grid gap-4 md:grid-cols-3 lg:grid-cols-6 mb-6">
+        <Card 
+          v-for="item in navItems" 
+          :key="item.title" 
+          :class="['cursor-pointer hover:bg-muted/50 transition-colors', { 'bg-muted/50': item.isActive }]"
+        >
+          <Link :href="item.href" class="block">
+            <div class="flex flex-col items-center justify-center p-4">
+              <component :is="item.icon" class="h-6 w-6 mb-2" />
+              <span class="text-sm font-medium">{{ item.title }}</span>
+            </div>
+          </Link>
+        </Card>
+      </div>
       <div class="flex items-center justify-between mb-6">
         <div>
           <h1 class="text-3xl font-bold tracking-tight">Menu Management</h1>
@@ -137,9 +199,11 @@ processMenuItems();
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Image</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Price</TableHead>
+                <TableHead>Attributes</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead class="w-[150px]">Actions</TableHead>
               </TableRow>
@@ -147,9 +211,33 @@ processMenuItems();
             <TableBody>
               <template v-if="props.menuItems.length > 0">
                 <TableRow v-for="item in props.menuItems" :key="item.id" class="hover:bg-muted/50">
+                  <TableCell>
+                    <div class="h-12 w-12 overflow-hidden rounded-md">
+                      <img 
+                        v-if="item.image_path" 
+                        :src="item.image_path.startsWith('http') ? item.image_path : `/storage/${item.image_path}`" 
+                        :alt="item.name"
+                        class="h-full w-full object-cover"
+                      />
+                      <div v-else class="h-full w-full bg-muted flex items-center justify-center text-muted-foreground">
+                        <span class="text-xs">No image</span>
+                      </div>
+                    </div>
+                  </TableCell>
                   <TableCell>{{ item.name }}</TableCell>
                   <TableCell>{{ item.category }}</TableCell>
                   <TableCell>{{ formatCurrency(item.price) }}</TableCell>
+                  <TableCell>
+                    <!-- Display attributes if any -->
+                    <div v-if="item.options && item.options.length > 0" class="flex flex-col gap-1 mb-1">
+                      <div v-for="(attr, index) in item.options" :key="index" class="text-xs">
+                        <span class="font-medium">{{ attr.name }}:</span> 
+                        <span class="text-muted-foreground">
+                          {{ attr.values.map(value => formatAttributeValue(value)).join(', ') }}
+                        </span>
+                      </div>
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <Badge :variant="item.is_available ? 'default' : 'secondary'" 
                       :class="item.is_available ? 'bg-green-500' : ''"
@@ -193,7 +281,7 @@ processMenuItems();
                 </TableRow>
               </template>
               <TableRow v-if="props.menuItems.length === 0">
-                <TableCell colspan="5" class="text-center py-6 text-muted-foreground">
+                <TableCell colspan="7" class="text-center py-6 text-muted-foreground">
                   No menu items found. Click "Add Menu Item" to create your first menu item.
                 </TableCell>
               </TableRow>
@@ -219,9 +307,31 @@ processMenuItems();
             <CardContent>
               <ul class="space-y-2">
                 <li v-for="item in items" :key="item.id" class="flex items-center justify-between border-b pb-2">
-                  <div>
-                    <div class="font-medium">{{ item.name }}</div>
-                    <div class="text-sm text-muted-foreground" v-if="item.description">{{ item.description }}</div>
+                  <div class="flex items-center gap-3">
+                    <div class="h-12 w-12 overflow-hidden rounded-md flex-shrink-0">
+                      <img 
+                        v-if="item.image_path" 
+                        :src="item.image_path.startsWith('http') ? item.image_path : `/storage/${item.image_path}`" 
+                        :alt="item.name"
+                        class="h-full w-full object-cover"
+                      />
+                      <div v-else class="h-full w-full bg-muted flex items-center justify-center text-muted-foreground">
+                        <span class="text-xs">No image</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div class="font-medium">{{ item.name }}</div>
+                      <div class="text-sm text-muted-foreground" v-if="item.description">{{ item.description }}</div>
+                      <!-- Display attributes in category view -->
+                      <div v-if="item.options && item.options.length > 0" class="flex flex-wrap gap-x-3 gap-y-1 mt-1">
+                        <div v-for="(attr, index) in item.options" :key="index" class="text-xs">
+                          <span class="font-medium">{{ attr.name }}:</span> 
+                          <span class="text-muted-foreground">
+                            {{ attr.values.map(value => formatAttributeValue(value)).join(', ') }}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                   <div class="flex items-center gap-2">
                     <Badge :variant="item.is_available ? 'default' : 'secondary'" 

@@ -36,13 +36,13 @@
               <TableCell>{{ restaurant.name }}</TableCell>
               <TableCell>{{ restaurant.description || 'No description' }}</TableCell>
               <TableCell class="space-x-2">
-                <Button variant="ghost" size="sm" as="a" :href="route('restaurants.show', restaurant.id)">
+                <Button variant="ghost" @click="router.visit(route('restaurants.show', restaurant.id))" class="cursor-pointer">
                   View
                 </Button>
-                <Button variant="outline" size="sm" as="a" :href="route('restaurants.edit', restaurant.id)">
+                <Button variant="outline" @click="router.visit(route('restaurants.edit', restaurant.id))" class="cursor-pointer">
                   Edit
                 </Button>
-                <Button variant="destructive" size="sm" @click="deleteRestaurant(restaurant.id)">
+                <Button variant="destructive" size="sm" @click="deleteRestaurant(restaurant.id)" class="cursor-pointer">
                   Delete
                 </Button>
               </TableCell>
@@ -56,7 +56,7 @@
 
 <script setup lang="ts">
 import AppLayout from '@/layouts/AppLayout.vue';
-import { type BreadcrumbItem } from '@/types';
+import { type BreadcrumbItemType } from '@/types';
 import { Head, router } from '@inertiajs/vue3';
 
 // Import shadcn components
@@ -82,7 +82,7 @@ const deleteRestaurant = (id: number) => {
   }
 };
 
-const breadcrumbs: BreadcrumbItem[] = [
+const breadcrumbs: BreadcrumbItemType[] = [
   {
     title: 'Restaurants',
     href: '/restaurants',
