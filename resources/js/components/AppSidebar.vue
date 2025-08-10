@@ -5,31 +5,66 @@ import NavUser from '@/components/NavUser.vue';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { type NavItem } from '@/types';
 import { Link } from '@inertiajs/vue3';
-import { BookOpen, Calendar, Folder, LayoutGrid } from 'lucide-vue-next';
+import { 
+    BookOpen, 
+    LayoutGrid, 
+    UtensilsCrossed, 
+    QrCode, 
+    ChefHat, 
+    Receipt, 
+    Users, 
+    Settings,
+    CreditCard
+} from 'lucide-vue-next';
 import AppLogo from './AppLogo.vue';
 
 const mainNavItems: NavItem[] = [
     {
-        title: 'Dashboard',
-        href: '/dashboard',
+        title: 'Restaurants',
+        href: route('restaurants.index'),
         icon: LayoutGrid,
     },
     {
-        title: 'Events',
-        href: '/events',
-        icon: Calendar,
+        title: 'Menu',
+        href: route('restaurants.index') + '?view=menu',
+        icon: UtensilsCrossed,
+    },
+    {
+        title: 'QR Codes',
+        href: route('restaurants.index') + '?view=qrcodes',
+        icon: QrCode,
+    },
+    {
+        title: 'Kitchen',
+        href: route('restaurants.index') + '?view=kitchen',
+        icon: ChefHat,
+    },
+    {
+        title: 'Orders',
+        href: route('restaurants.index') + '?view=orders',
+        icon: Receipt,
+    },
+    {
+        title: 'Staff',
+        href: route('restaurants.index') + '?view=staff',
+        icon: Users,
+    },
+    {
+        title: 'Payments',
+        href: route('restaurants.index') + '?view=payments',
+        icon: CreditCard,
+    },
+    {
+        title: 'Settings',
+        href: route('restaurants.index') + '?view=settings',
+        icon: Settings,
     },
 ];
 
 const footerNavItems: NavItem[] = [
     {
-        title: 'Github Repo',
-        href: 'https://github.com/laravel/vue-starter-kit',
-        icon: Folder,
-    },
-    {
         title: 'Documentation',
-        href: 'https://laravel.com/docs/starter-kits#vue',
+        href: '#',
         icon: BookOpen,
     },
 ];

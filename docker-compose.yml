@@ -1,0 +1,24 @@
+version: '3'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: eattinee_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: eattinee
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_PASSWORD: password
+      MYSQL_USER: eattinee
+      SERVICE_TAGS: dev
+      SERVICE_NAME: mysql
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./docker/mysql:/var/lib/mysql
+    networks:
+      - eattinee
+
+networks:
+  eattinee:
+    driver: bridge
