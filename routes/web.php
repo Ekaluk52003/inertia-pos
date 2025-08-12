@@ -18,12 +18,6 @@ Route::get('/', function () {
     return Inertia::render('Welcome');
 })->name('home');
 
-Route::get('/public', function () {
-    return Inertia::render('Customer');
-})->name('public');
-
-
-
 
 
 

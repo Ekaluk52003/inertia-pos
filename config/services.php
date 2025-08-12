@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'slipok' => [
+        'api_key' => env('SLIPOK_API_KEY'),
+        'branch_id' => env('SLIPOK_BRANCH_ID'),
+        'dev_mode' => env('SLIPOK_DEV_MODE', true),
+    ],
+
 ];
