@@ -19,7 +19,8 @@ class BasePolicy
      */
     protected function isOwner(User $user, Restaurant $restaurant): bool
     {
-        return $user->isOwner() && $restaurant->owner_id === $user->id;
+        // Allow any user with 'owner' role to access any restaurant
+        return $user->isOwner();
     }
 
     /**

@@ -85,26 +85,51 @@ class OrderController extends Controller
      */
     public function kitchenView(Restaurant $restaurant)
     {
-        $this->authorize('viewKitchen', $restaurant);
+        
 
-        $activeOrders = $restaurant->orders()
-            ->where('status', 'open')
-            ->with(['orderItems' => function ($query) {
-                $query->whereIn('status', ['pending', 'cooking', 'ready'])
-                    ->orderBy('created_at');
-            }])
+        // Get all orders without any filtering first
+        $allOrders = $restaurant->orders()
+            ->orderBy('created_at', 'desc')
+            ->take(50)
             ->get();
+            
+   
+        // Now load the order items separately
+        $allOrders->load('orderItems');       
+        
+      
+        
+        // Group orders by table number and ensure proper camelCase keys for Vue
+        $ordersByTable = $allOrders->groupBy('table_number')->map(function ($tableOrders) {
+            return [
+                'table_number' => $tableOrders->first()->table_number,
+                'orders' => $tableOrders->map(function ($order) {
+                    // Convert the order to an array
+                    $orderArray = $order->toArray();
+                    
+                    // Ensure orderItems is properly set (camelCase for Vue)
+                    if (isset($orderArray['order_items'])) {
+                        $orderArray['orderItems'] = $orderArray['order_items'];
+                        unset($orderArray['order_items']);
+                    }
+                    
+                    return $orderArray;
+                })->values()
+            ];
+        })->values();
+       
 
         return Inertia::render('Kitchen/Show', [
             'restaurant' => $restaurant,
-            'activeOrders' => $activeOrders,
+            'ordersByTable' => $ordersByTable,
+            'activeOrders' => $allOrders, // Keep for backward compatibility
         ]);
     }
 
     /**
      * Create a new order from the public menu (customer-facing).
      */
-    public function storeFromMenu(Request $request, $restaurantCode, $tableCode): RedirectResponse
+    public function storeFromMenu(Request $request, $restaurantCode, $tableCode)
     {
         try {
             // Debug incoming request

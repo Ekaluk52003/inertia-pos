@@ -112,7 +112,6 @@ const navItems = [
           </div>
         </div>
 
-        <!-- Summary Stats removed for now -->
 
         <!-- Navigation Cards -->
         <div class="grid gap-4 md:grid-cols-3 lg:grid-cols-6 mb-6">

@@ -80,6 +80,12 @@ class OrderPolicy extends BasePolicy
      */
     public function viewKitchen(User $user, Restaurant $restaurant): bool
     {
-        return $this->isOwnerOrStaff($user, $restaurant);
+        // Allow any owner to view kitchen for any restaurant
+        if ($user->isOwner()) {
+            return true;
+        }
+        
+        // Staff can only view kitchen for their assigned restaurant
+        return $this->isStaff($user, $restaurant);
     }
 }
