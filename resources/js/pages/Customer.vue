@@ -220,7 +220,7 @@ const scrollToCategory = (category: string) => {
             </div>
 
             <!-- Category Navigation -->
-            <div class="sticky top-0 z-10 flex gap-2 overflow-x-auto bg-white pb-2">
+            <div class="sticky top-0 z-0 flex gap-2 overflow-x-auto bg-white pb-2">
                 <Button
                     v-for="category in categories"
                     :key="category"

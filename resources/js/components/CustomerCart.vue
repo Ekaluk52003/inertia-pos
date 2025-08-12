@@ -149,7 +149,7 @@ const submitOrder = () => {
         </Button>
 
         <!-- Cart Panel -->
-        <Card v-if="cartStore.showCart" class="absolute right-0 bottom-full left-0 md:left-auto md:w-[400px] mt-2 mb-2 max-h-[70vh] overflow-y-auto z-20">
+        <Card v-if="cartStore.showCart" class="absolute right-0 bottom-full left-0 md:left-auto md:w-[400px] mt-2 mb-2 max-h-[70vh] overflow-y-auto z-30">
             <CardHeader>
                 <CardTitle>Your Order</CardTitle>
                 <CardDescription>Table {{ props.tableCode }}</CardDescription>
