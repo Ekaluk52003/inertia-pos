@@ -5,6 +5,7 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft } from 'lucide-vue-next';
 
 // Simple date formatting function
@@ -62,8 +63,6 @@ const breadcrumbItems = [
   { title: 'Kitchen View', href: route('kitchen.show', props.restaurant.id), current: true },
 ];
 
-// Already defined formatDate function at the top, so removing this duplicate
-
 // Get status badge class
 const getStatusClass = (status: string) => {
   switch (status) {
@@ -88,7 +87,8 @@ const playNotification = () => {
   }
 };
 
-
+// Tab state management
+const activeTab = ref('table'); // 'table' or 'order'
 
 // Track processing status for each item
 const processingItems = ref<Record<string, boolean>>({});
@@ -149,97 +149,157 @@ const getNextStatusText = (currentStatus: string) => {
       return 'Update';
   }
 };
-
-
 </script>
 
 <template>
   <AppLayout :breadcrumbs="breadcrumbItems">
     <Head :title="`Kitchen View - ${props.restaurant.name}`" />
-
+    
     <audio ref="audioRef" src="/audio/notification.mp3" preload="auto"></audio>
-
+    
     <div class="py-12">
       <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
         <div class="flex justify-between items-center mb-6">
           <div class="flex items-center">
-            <Link :href="route('orders.index', { restaurant: props.restaurant.id })" class="mr-4">
-              <Button variant="outline" size="sm">
+            <Link :href="route('restaurants.show', props.restaurant.id)">
+              <Button variant="outline" class="flex items-center">
                 <ArrowLeft class="mr-2 h-4 w-4" />
                 Back to Orders
               </Button>
             </Link>
-            <h1 class="text-2xl font-semibold text-gray-900">Kitchen View</h1>
+            <h1 class="ml-4 text-2xl font-semibold text-gray-900">Kitchen View</h1>
           </div>
-          <!-- Auto-refresh UI removed as requested -->
         </div>
-
-        <div v-if="props.ordersByTable.length === 0" class="text-center py-12">
-          <p class="text-gray-500 text-lg">No active orders at the moment.</p>
-        </div>
-
-        <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <!-- Group by table number -->
-          <div v-for="tableGroup in props.ordersByTable" :key="tableGroup.table_number" class="h-full">
-            <Card class="h-full">
-              <CardHeader class="bg-gray-50">
-                <div class="flex justify-between items-center">
-                  <CardTitle class="text-xl font-bold">Table {{ tableGroup.table_number }}</CardTitle>
-                  <Badge variant="outline">{{ tableGroup.orders.length }} Order(s)</Badge>
-                </div>
-              </CardHeader>
-              <CardContent class="p-0">
-                <!-- Loop through each order for this table -->
-                <div v-for="order in tableGroup.orders" :key="order.id" class="border-b last:border-b-0">
-                  <div class="p-4">
-                    <div class="flex justify-between items-center mb-2">
-                      <div class="text-sm font-medium">Order#{{ order.code.substring(0, 8) }}...</div>
-                      <div class="text-sm text-gray-500">{{ formatDate(order.created_at) }}</div>
+        
+        <!-- Tabs for different views -->
+        <Tabs :default-value="activeTab" @update:model-value="value => activeTab = value" class="mb-6">
+          <TabsList class="grid w-full grid-cols-2">
+            <TabsTrigger value="table">View by Table</TabsTrigger>
+            <TabsTrigger value="order">View by Order</TabsTrigger>
+          </TabsList>
+          
+          <!-- No orders message -->
+          <div v-if="props.ordersByTable.length === 0" class="text-center py-12">
+            <p class="text-gray-500 text-lg">No active orders at the moment.</p>
+          </div>
+          
+          <!-- View by Table Tab Content -->
+          <TabsContent value="table" class="mt-0">
+            <div v-if="props.ordersByTable.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <!-- Group by table number -->
+              <div v-for="tableGroup in props.ordersByTable" :key="tableGroup.table_number" class="h-full">
+                <Card class="h-full">
+                  <CardHeader class="bg-gray-50">
+                    <div class="flex justify-between items-center">
+                      <CardTitle class="text-xl font-bold">Table {{ tableGroup.table_number }}</CardTitle>
+                      <Badge variant="outline">{{ tableGroup.orders.length }} Order(s)</Badge>
                     </div>
-                    
-              
-                    
-                    <!-- Order items -->
-                    <!-- Debug info to show raw order items data -->
-                    <div class="bg-blue-50 p-2 mb-3 rounded text-sm">
-                      Order items count: {{ order.orderItems ? order.orderItems.length : 0 }}
-                    </div>
-                    
-                    <ul v-if="order.orderItems && order.orderItems.length > 0" class="space-y-3">
-                      <li v-for="item in order.orderItems" :key="item.id" class="p-2 rounded-md" :class="getStatusClass(item.status)">
-                        <div class="flex justify-between items-start">
-                          <div>
-                            <div class="font-medium">{{ item.name }} × {{ item.quantity }}</div>
-                            <div v-if="item.special_instructions" class="text-xs italic mt-1">
-                              {{ item.special_instructions }}
-                            </div>
-                            <div class="text-xs text-gray-500 mt-1">Status: {{ item.status }}</div>
-                          </div>
-                          <Button 
-                            v-if="item.status !== 'served'"
-                            @click="updateItemStatus(order.id, item.id, getNextStatus(item.status))" 
-                            size="sm" 
-                            variant="outline"
-                            :disabled="isProcessing(order.id, item.id)"
-                          >
-                            <span v-if="isProcessing(order.id, item.id)" class="mr-1">⏳</span>
-                            {{ getNextStatusText(item.status) }}
-                          </Button>
-                          <Badge v-else variant="outline" class="bg-blue-50">Served</Badge>
+                  </CardHeader>
+                  <CardContent class="p-0">
+                    <!-- Loop through each order for this table -->
+                    <div v-for="order in tableGroup.orders" :key="order.id" class="border-b last:border-b-0">
+                      <div class="p-4">
+                        <div class="flex justify-between items-center mb-2">
+                          <div class="text-sm font-medium">Order #{{ order.code.substring(0, 8) }}...</div>
+                          <div class="text-sm text-gray-500">{{ formatDate(order.created_at) }}</div>
                         </div>
-                      </li>
-                    </ul>
-                    
-                    <!-- Show message if no items in this order -->
-                    <div v-if="!order.orderItems || order.orderItems.length === 0" class="text-center py-2 text-sm text-gray-500">
-                      No items in this order
+                        
+                        <!-- Debug info to show raw order items data -->
+                        <div class="bg-blue-50 p-2 mb-3 rounded text-sm">
+                          Order items count: {{ order.orderItems ? order.orderItems.length : 0 }}
+                        </div>
+                        
+                        <ul v-if="order.orderItems && order.orderItems.length > 0" class="space-y-3">
+                          <li v-for="item in order.orderItems" :key="item.id" class="p-2 rounded-md" :class="getStatusClass(item.status)">
+                            <div class="flex justify-between items-start">
+                              <div>
+                                <div class="font-medium">{{ item.name }} × {{ item.quantity }}</div>
+                                <div v-if="item.special_instructions" class="text-xs italic mt-1">
+                                  {{ item.special_instructions }}
+                                </div>
+                                <div class="text-xs text-gray-500 mt-1">Status: {{ item.status }}</div>
+                              </div>
+                              <Button 
+                                v-if="item.status !== 'served'"
+                                @click="updateItemStatus(order.id, item.id, getNextStatus(item.status))" 
+                                size="sm" 
+                                variant="outline"
+                                :disabled="isProcessing(order.id, item.id)"
+                              >
+                                <span v-if="isProcessing(order.id, item.id)" class="mr-1">⏳</span>
+                                {{ getNextStatusText(item.status) }}
+                              </Button>
+                              <Badge v-else variant="outline" class="bg-blue-50">Served</Badge>
+                            </div>
+                          </li>
+                        </ul>
+                        
+                        <!-- Show message if no items in this order -->
+                        <div v-if="!order.orderItems || order.orderItems.length === 0" class="text-center py-2 text-sm text-gray-500">
+                          No items in this order
+                        </div>
+                      </div>
                     </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </TabsContent>
+          
+          <!-- View by Order Tab Content -->
+          <TabsContent value="order" class="mt-0">
+            <div v-if="props.activeOrders && props.activeOrders.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <!-- Display orders without grouping by table -->
+              <Card v-for="order in props.activeOrders" :key="order.id" class="h-full">
+                <CardHeader class="bg-gray-50">
+                  <div class="flex justify-between items-center">
+                    <CardTitle class="text-lg font-bold">
+                      Order #{{ order.code.substring(0, 8) }}...
+                      <span class="ml-2 text-sm font-normal">Table {{ order.table_number }}</span>
+                    </CardTitle>
+                    <Badge variant="outline">{{ order.orderItems ? order.orderItems.length : 0 }} Items</Badge>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+                  <div class="text-sm text-gray-500 mt-1">{{ formatDate(order.created_at) }}</div>
+                </CardHeader>
+                <CardContent>
+                  <!-- Order items -->
+                  <ul v-if="order.orderItems && order.orderItems.length > 0" class="space-y-3">
+                    <li v-for="item in order.orderItems" :key="item.id" class="p-2 rounded-md" :class="getStatusClass(item.status)">
+                      <div class="flex justify-between items-start">
+                        <div>
+                          <div class="font-medium">{{ item.name }} × {{ item.quantity }}</div>
+                          <div v-if="item.special_instructions" class="text-xs italic mt-1">
+                            {{ item.special_instructions }}
+                          </div>
+                          <div class="text-xs text-gray-500 mt-1">Status: {{ item.status }}</div>
+                        </div>
+                        <Button 
+                          v-if="item.status !== 'served'"
+                          @click="updateItemStatus(order.id, item.id, getNextStatus(item.status))" 
+                          size="sm" 
+                          variant="outline"
+                          :disabled="isProcessing(order.id, item.id)"
+                        >
+                          <span v-if="isProcessing(order.id, item.id)" class="mr-1">⏳</span>
+                          {{ getNextStatusText(item.status) }}
+                        </Button>
+                        <Badge v-else variant="outline" class="bg-blue-50">Served</Badge>
+                      </div>
+                    </li>
+                  </ul>
+                  
+                  <!-- Show message if no items in this order -->
+                  <div v-if="!order.orderItems || order.orderItems.length === 0" class="text-center py-2 text-sm text-gray-500">
+                    No items in this order
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+            <div v-else class="text-center py-12">
+              <p class="text-gray-500 text-lg">No active orders at the moment.</p>
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   </AppLayout>

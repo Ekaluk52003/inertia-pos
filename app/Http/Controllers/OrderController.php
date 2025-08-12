@@ -85,19 +85,14 @@ class OrderController extends Controller
      */
     public function kitchenView(Restaurant $restaurant)
     {
-        
-
         // Get all orders without any filtering first
         $allOrders = $restaurant->orders()
             ->orderBy('created_at', 'desc')
             ->take(50)
             ->get();
             
-   
         // Now load the order items separately
         $allOrders->load('orderItems');       
-        
-      
         
         // Group orders by table number and ensure proper camelCase keys for Vue
         $ordersByTable = $allOrders->groupBy('table_number')->map(function ($tableOrders) {
@@ -117,12 +112,24 @@ class OrderController extends Controller
                 })->values()
             ];
         })->values();
-       
+        
+        // Format activeOrders with proper camelCase keys for Vue
+        $formattedActiveOrders = $allOrders->map(function ($order) {
+            $orderArray = $order->toArray();
+            
+            // Ensure orderItems is properly set (camelCase for Vue)
+            if (isset($orderArray['order_items'])) {
+                $orderArray['orderItems'] = $orderArray['order_items'];
+                unset($orderArray['order_items']);
+            }
+            
+            return $orderArray;
+        });
 
         return Inertia::render('Kitchen/Show', [
             'restaurant' => $restaurant,
             'ordersByTable' => $ordersByTable,
-            'activeOrders' => $allOrders, // Keep for backward compatibility
+            'activeOrders' => $formattedActiveOrders, // Now properly formatted
         ]);
     }
 
