@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
-import { ref, onMounted } from 'vue';
+import { Head, Link, router } from '@inertiajs/vue3';
+import { ref } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -90,39 +90,36 @@ const playNotification = () => {
 
 
 
-// Update item status
+// Track processing status for each item
+const processingItems = ref<Record<string, boolean>>({});
+
+// Update item status using Inertia.js
 const updateItemStatus = (orderId: number, itemId: number, newStatus: string) => {
-  const form = document.createElement('form');
-  form.method = 'POST';
-  form.action = route('orders.update-item-status', { restaurant: props.restaurant.id, order: orderId });
+  // Set this specific item as processing
+  const itemKey = `${orderId}-${itemId}`;
+  processingItems.value[itemKey] = true;
   
-  const methodInput = document.createElement('input');
-  methodInput.type = 'hidden';
-  methodInput.name = '_method';
-  methodInput.value = 'patch';
+  // Play notification sound if available
+  playNotification();
   
-  const tokenInput = document.createElement('input');
-  tokenInput.type = 'hidden';
-  tokenInput.name = '_token';
-  tokenInput.value = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-  
-  const itemIdInput = document.createElement('input');
-  itemIdInput.type = 'hidden';
-  itemIdInput.name = 'order_item_id';
-  itemIdInput.value = itemId.toString();
-  
-  const statusInput = document.createElement('input');
-  statusInput.type = 'hidden';
-  statusInput.name = 'status';
-  statusInput.value = newStatus;
-  
-  form.appendChild(methodInput);
-  form.appendChild(tokenInput);
-  form.appendChild(itemIdInput);
-  form.appendChild(statusInput);
-  
-  document.body.appendChild(form);
-  form.submit();
+  // Use Inertia router to make a PATCH request
+  router.patch(
+    route('orders.update-item-status', { restaurant: props.restaurant.id, order: orderId }),
+    {
+      order_item_id: itemId,
+      status: newStatus
+    },
+    {
+      preserveScroll: true,
+      onFinish: () => { processingItems.value[itemKey] = false; }
+    }
+  );
+};
+
+// Check if an item is currently being processed
+const isProcessing = (orderId: number, itemId: number) => {
+  const itemKey = `${orderId}-${itemId}`;
+  return processingItems.value[itemKey] === true;
 };
 
 // Get next status
@@ -219,12 +216,16 @@ const getNextStatusText = (currentStatus: string) => {
                             <div class="text-xs text-gray-500 mt-1">Status: {{ item.status }}</div>
                           </div>
                           <Button 
+                            v-if="item.status !== 'served'"
                             @click="updateItemStatus(order.id, item.id, getNextStatus(item.status))" 
                             size="sm" 
                             variant="outline"
+                            :disabled="isProcessing(order.id, item.id)"
                           >
+                            <span v-if="isProcessing(order.id, item.id)" class="mr-1">⏳</span>
                             {{ getNextStatusText(item.status) }}
                           </Button>
+                          <Badge v-else variant="outline" class="bg-blue-50">Served</Badge>
                         </div>
                       </li>
                     </ul>
