@@ -7,6 +7,13 @@ import { createApp, h } from 'vue';
 import { ZiggyVue } from 'ziggy-js';
 import { initializeTheme } from './composables/useAppearance';
 import { createPinia } from 'pinia';
+import { configureEcho } from '@laravel/echo-vue';
+
+// Configure Echo with Reverb settings from environment variables
+configureEcho({
+    broadcaster: "reverb",
+
+});
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -29,3 +36,5 @@ createInertiaApp({
 
 // This will set light / dark mode on page load...
 initializeTheme();
+
+

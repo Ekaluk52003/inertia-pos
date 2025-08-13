@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft } from 'lucide-vue-next';
+// Import the useEchoPublic hook for public channels
+import { useEchoPublic } from '@laravel/echo-vue';
 
 // Simple date formatting function
 const formatDate = (dateString: string) => {
@@ -79,16 +81,67 @@ const getStatusClass = (status: string) => {
   }
 };
 
-// Audio notification
+// Audio notification system
 const audioRef = ref<HTMLAudioElement | null>(null);
+const userInteracted = ref(false);
+const notificationEnabled = ref(false);
+
+// Play notification sound if enabled and user has interacted with the page
 const playNotification = () => {
+  if (audioRef.value && userInteracted.value && notificationEnabled.value) {
+    audioRef.value.play().catch(error => {
+      console.warn('Could not play notification sound:', error);
+    });
+  } else {
+    console.log('Notification sound not played: ' + 
+      (!userInteracted.value ? 'No user interaction yet. ' : '') +
+      (!notificationEnabled.value ? 'Notifications not enabled. ' : '') +
+      (!audioRef.value ? 'Audio element not found.' : ''));
+  }
+};
+
+// Enable notifications after user interaction
+const enableNotifications = () => {
+  userInteracted.value = true;
+  notificationEnabled.value = true;
+  // Play a test sound to confirm notifications are working
   if (audioRef.value) {
-    audioRef.value.play();
+    audioRef.value.volume = 0.2; // Lower volume for test sound
+    audioRef.value.play()
+      .then(() => {
+        console.log('Notifications enabled successfully!');
+        audioRef.value!.volume = 1.0; // Reset volume to normal
+      })
+      .catch(error => {
+        console.warn('Could not enable notifications:', error);
+      });
   }
 };
 
 // Tab state management
 const activeTab = ref('table'); // 'table' or 'order'
+
+
+
+// Setup Echo listener for new orders using the public channel
+const channelName = `restaurant.${props.restaurant.id}`;
+useEchoPublic(
+  channelName,
+  'NewOrder',
+  (event: any) => {
+    console.log('New order received superb:', event);
+    playNotification();
+    router.reload({ only: ['activeOrders', 'ordersByTable'] });
+  }
+)
+
+
+
+
+// Log that we're listening
+console.log(`Subscribed to public channel: ${channelName}`);
+
+// Clean up is handled automatically by the hook
 
 // Track processing status for each item
 const processingItems = ref<Record<string, boolean>>({});
@@ -162,13 +215,23 @@ const getNextStatusText = (currentStatus: string) => {
         <div class="flex justify-between items-center mb-6">
           <div class="flex items-center">
             <Link :href="route('restaurants.show', props.restaurant.id)">
-              <Button variant="outline" class="flex items-center">
-                <ArrowLeft class="mr-2 h-4 w-4" />
+              <Button variant="outline" class="flex items-center gap-2">
+                <ArrowLeft class="h-4 w-4" />
                 Back to Orders
               </Button>
             </Link>
             <h1 class="ml-4 text-2xl font-semibold text-gray-900">Kitchen View</h1>
           </div>
+          
+          <!-- Notification toggle button -->
+          <Button 
+            @click="enableNotifications" 
+            variant="outline" 
+            :class="{'bg-yellow-100': notificationEnabled}"
+          >
+            <span v-if="notificationEnabled">🔔 Notifications On</span>
+            <span v-else>🔕 Enable Notifications</span>
+          </Button>
         </div>
         
         <!-- Tabs for different views -->
