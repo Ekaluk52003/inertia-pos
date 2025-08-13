@@ -12,7 +12,13 @@ import { configureEcho } from '@laravel/echo-vue';
 // Configure Echo with Reverb settings from environment variables
 configureEcho({
     broadcaster: "reverb",
-
+    csrfToken: document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+    authEndpoint: '/broadcasting/auth',
+    // Reconnection settings
+    reconnectionAttempts: 5,
+    reconnectionDelay: 500,
+    // Debug mode for development
+    debug: import.meta.env.DEV,
 });
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';

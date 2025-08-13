@@ -7,8 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft } from 'lucide-vue-next';
-// Import the useEchoPublic hook for public channels
-import { useEchoPublic } from '@laravel/echo-vue';
+// Import the useEcho hook for private channels
+import { useEcho } from '@laravel/echo-vue';
 
 // Simple date formatting function
 const formatDate = (dateString: string) => {
@@ -123,13 +123,13 @@ const activeTab = ref('table'); // 'table' or 'order'
 
 
 
-// Setup Echo listener for new orders using the public channel
+// Setup Echo listener for new orders using the private channel
 const channelName = `restaurant.${props.restaurant.id}`;
-useEchoPublic(
+useEcho(
   channelName,
   'NewOrder',
   (event: any) => {
-    console.log('New order received superb:', event);
+    console.log('New order received:', event);
     playNotification();
     router.reload({ only: ['activeOrders', 'ordersByTable'] });
   }
@@ -139,7 +139,15 @@ useEchoPublic(
 
 
 // Log that we're listening
-console.log(`Subscribed to public channel: ${channelName}`);
+console.log(`Subscribed to private channel: ${channelName}`);
+
+// Add visibility change detection to handle tab focus changes
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    console.log('Tab is now visible, refreshing data...');
+    router.reload({ only: ['activeOrders', 'ordersByTable'] });
+  }
+});
 
 // Clean up is handled automatically by the hook
 
