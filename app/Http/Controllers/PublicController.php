@@ -59,8 +59,29 @@ class PublicController extends Controller
             ->latest()
             ->get()
             ->map(function($order) {
-                // Convert orderItems to order_items for frontend consistency
-                $order->order_items = $order->orderItems;
+                // Convert orderItems to items for frontend consistency
+                $order->items = $order->orderItems->map(function($item) {
+                    // Ensure options are properly formatted
+                    if ($item->options && is_array($item->options)) {
+                        // Create a new options array with the correct property names
+                        $formattedOptions = [];
+                        foreach ($item->options as $option) {
+                            $formattedOption = $option;
+                            if (isset($option['optionName']) && !isset($option['option_name'])) {
+                                $formattedOption['option_name'] = $option['optionName'];
+                                unset($formattedOption['optionName']);
+                            }
+                            if (isset($option['additionalPrice']) && !isset($option['additional_price'])) {
+                                $formattedOption['additional_price'] = $option['additionalPrice'];
+                                unset($formattedOption['additionalPrice']);
+                            }
+                            $formattedOptions[] = $formattedOption;
+                        }
+                        // Set the formatted options on the item
+                        $item->options = $formattedOptions;
+                    }
+                    return $item;
+                });
                 return $order;
             });
             
@@ -70,8 +91,29 @@ class PublicController extends Controller
                 $query->orderBy('created_at', 'desc');
             }]);
             
-            // Convert orderItems to order_items for frontend consistency
-            $activeOrder->order_items = $activeOrder->orderItems;
+            // Convert orderItems to items for frontend consistency
+            $activeOrder->items = $activeOrder->orderItems->map(function($item) {
+                // Ensure options are properly formatted
+                if ($item->options && is_array($item->options)) {
+                    // Create a new options array with the correct property names
+                    $formattedOptions = [];
+                    foreach ($item->options as $option) {
+                        $formattedOption = $option;
+                        if (isset($option['optionName']) && !isset($option['option_name'])) {
+                            $formattedOption['option_name'] = $option['optionName'];
+                            unset($formattedOption['optionName']);
+                        }
+                        if (isset($option['additionalPrice']) && !isset($option['additional_price'])) {
+                            $formattedOption['additional_price'] = $option['additionalPrice'];
+                            unset($formattedOption['additionalPrice']);
+                        }
+                        $formattedOptions[] = $formattedOption;
+                    }
+                    // Set the formatted options on the item
+                    $item->options = $formattedOptions;
+                }
+                return $item;
+            });
         }
         
         // Check for flash messages from the order controller
@@ -88,9 +130,30 @@ class PublicController extends Controller
         // If we have a flashed activeOrder from a new order submission, use that instead
         if (session('activeOrder')) {
             $activeOrder = session('activeOrder');
-            // Make sure we have order_items for frontend consistency
-            if ($activeOrder->orderItems && !isset($activeOrder->order_items)) {
-                $activeOrder->order_items = $activeOrder->orderItems;
+            // Make sure we have items for frontend consistency
+            if ($activeOrder->orderItems && !isset($activeOrder->items)) {
+                $activeOrder->items = $activeOrder->orderItems->map(function($item) {
+                    // Ensure options are properly formatted
+                    if ($item->options && is_array($item->options)) {
+                        // Create a new options array with the correct property names
+                        $formattedOptions = [];
+                        foreach ($item->options as $option) {
+                            $formattedOption = $option;
+                            if (isset($option['optionName']) && !isset($option['option_name'])) {
+                                $formattedOption['option_name'] = $option['optionName'];
+                                unset($formattedOption['optionName']);
+                            }
+                            if (isset($option['additionalPrice']) && !isset($option['additional_price'])) {
+                                $formattedOption['additional_price'] = $option['additionalPrice'];
+                                unset($formattedOption['additionalPrice']);
+                            }
+                            $formattedOptions[] = $formattedOption;
+                        }
+                        // Set the formatted options on the item
+                        $item->options = $formattedOptions;
+                    }
+                    return $item;
+                });
             }
         }
         

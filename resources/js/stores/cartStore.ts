@@ -28,9 +28,9 @@ interface MenuItem {
 }
 
 interface SelectedOption {
-    optionName: string;
+    option_name: string;
     choices: string[];
-    additionalPrice: number;
+    additional_price: number;
 }
 
 interface CartItem {
@@ -41,10 +41,11 @@ interface CartItem {
 }
 
 interface OrderItem {
-    [key: string]: string | number | null; // Add index signature for FormDataConvertible
+    [key: string]: string | number | null | SelectedOption[] | any; // Add index signature for FormDataConvertible
     menu_id: number;
     quantity: number;
     special_instructions: string | null;
+    selected_options?: SelectedOption[] | null;
 }
 
 interface OrderItemStatus {
@@ -54,6 +55,7 @@ interface OrderItemStatus {
     quantity: number;
     status: 'pending' | 'cooking' | 'ready' | 'served';
     special_instructions?: string | null;
+    options?: SelectedOption[] | null;
     created_at: string;
 }
 
@@ -93,7 +95,7 @@ export const useCartStore = defineStore('cart', () => {
             // Add additional price from selected options
             if (item.selectedOptions && item.selectedOptions.length > 0) {
                 const optionsPrice = item.selectedOptions.reduce((sum, opt) => {
-                    return sum + Number(opt.additionalPrice || 0);
+                    return sum + Number(opt.additional_price || 0);
                 }, 0);
                 itemTotal += optionsPrice;
             }
@@ -108,9 +110,8 @@ export const useCartStore = defineStore('cart', () => {
     
     // Total items count (cart + active order items)
     const totalItemCount = computed(() => {
-        const cartCount = cart.value.reduce((count, item) => count + item.quantity, 0);
-        const orderCount = activeOrder.value && activeOrder.value.items ? activeOrder.value.items.length : 0;
-        return cartCount + orderCount;
+        // Only count items in the cart, not active orders
+        return cart.value.reduce((count, item) => count + item.quantity, 0);
     });
     
     // Order status computed properties
@@ -213,16 +214,16 @@ export const useCartStore = defineStore('cart', () => {
         currentItem.value = null;
     };
 
-    const toggleOptionChoice = (optionName: string, choiceName: string, price: number = 0) => {
+    const toggleOptionChoice = (option_name: string, choiceName: string, price: number = 0) => {
         // Find if we already have this option in our selection
-        const existingOptionIndex = selectedOptions.value.findIndex((opt) => opt.optionName === optionName);
+        const existingOptionIndex = selectedOptions.value.findIndex((opt) => opt.option_name === option_name);
 
         // If the option doesn't exist yet, create it
         if (existingOptionIndex === -1) {
             selectedOptions.value.push({
-                optionName,
+                option_name,
                 choices: [choiceName],
-                additionalPrice: price,
+                additional_price: price,
             });
             return;
         }
@@ -234,7 +235,7 @@ export const useCartStore = defineStore('cart', () => {
         const choiceIndex = existingOption.choices.indexOf(choiceName);
 
         // Find the current option in the menu item
-        const menuOption = currentItem.value?.options?.find((opt) => opt.name === optionName);
+        const menuOption = currentItem.value?.options?.find((opt) => opt.name === option_name);
 
         // Check if this is a multiple-choice option
         const isMultiple = menuOption?.multiple === true;
@@ -244,7 +245,7 @@ export const useCartStore = defineStore('cart', () => {
             if (isMultiple) {
                 // For multiple-choice options, add the new choice
                 existingOption.choices.push(choiceName);
-                existingOption.additionalPrice += price;
+                existingOption.additional_price += price;
             } else {
                 // For single-choice options, replace the existing choice
                 existingOption.choices = [choiceName];
@@ -260,7 +261,7 @@ export const useCartStore = defineStore('cart', () => {
                 }
                 
                 // Set the new price
-                existingOption.additionalPrice = price;
+                existingOption.additional_price = price;
             }
         } else {
             // Choice is already selected
@@ -268,7 +269,7 @@ export const useCartStore = defineStore('cart', () => {
                 // For multiple-choice options, remove the choice if it's not the last one
                 if (existingOption.choices.length > 1) {
                     existingOption.choices.splice(choiceIndex, 1);
-                    existingOption.additionalPrice -= price;
+                    existingOption.additional_price -= price;
                 }
             } else {
                 // For single-choice options, do nothing (can't deselect the only choice)
@@ -281,8 +282,8 @@ export const useCartStore = defineStore('cart', () => {
         }
     };
 
-    const isChoiceSelected = (optionName: string, choiceName: string): boolean => {
-        const option = selectedOptions.value.find((opt) => opt.optionName === optionName);
+    const isChoiceSelected = (option_name: string, choiceName: string): boolean => {
+        const option = selectedOptions.value.find((opt) => opt.option_name === option_name);
         return option ? option.choices.includes(choiceName) : false;
     };
 
@@ -327,7 +328,7 @@ export const useCartStore = defineStore('cart', () => {
                 if (option.required === false) return false;
 
                 // Check if this option is in our selection
-                const isSelected = selectedOptions.value.some((selected) => selected.optionName === option.name);
+                const isSelected = selectedOptions.value.some((selected) => selected.option_name === option.name);
                 return !isSelected;
             });
 
@@ -351,7 +352,7 @@ export const useCartStore = defineStore('cart', () => {
 
             // Each option must match exactly
             for (const option of selectedOptions.value) {
-                const cartOption = cartItem.selectedOptions.find((opt) => opt.optionName === option.optionName);
+                const cartOption = cartItem.selectedOptions.find((opt) => opt.option_name === option.option_name);
                 if (!cartOption) return false;
 
                 // Check if choices match
@@ -407,17 +408,30 @@ export const useCartStore = defineStore('cart', () => {
         if (!activeOrder.value || !activeOrder.value.items) return 0;
         
         return activeOrder.value.items.reduce((total, item) => {
-            return total + (Number(item.price) * (item.quantity || 1));
+            // Base price * quantity
+            let itemTotal = Number(item.price) * (item.quantity || 1);
+            
+            // Add additional price from options if available
+            if (item.options && Array.isArray(item.options)) {
+                item.options.forEach(option => {
+                    if (option.additional_price) {
+                        itemTotal += Number(option.additional_price) * (item.quantity || 1);
+                    }
+                });
+            }
+            
+            return total + itemTotal;
         }, 0);
     };
 
     const prepareOrderItems = (): OrderItem[] => {
         return cart.value.map((item: CartItem) => {
-            // Create a clean order item object with only the required fields
+            // Create a clean order item object with all required fields
             const orderItem: OrderItem = {
                 menu_id: item.item.id,
                 quantity: item.quantity,
                 special_instructions: item.notes || null,
+                selected_options: item.selectedOptions.length > 0 ? item.selectedOptions : null,
             };
             return orderItem;
         });

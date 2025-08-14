@@ -54,6 +54,7 @@ interface OrderItem {
   quantity: number;
   status: string;
   special_instructions: string | null;
+  options?: any[] | null;
 }
 
 const props = defineProps<Props>();
@@ -119,7 +120,7 @@ const enableNotifications = () => {
 };
 
 // Tab state management
-const activeTab = ref('table'); // 'table' or 'order'
+const activeTab = ref<string | number>('table'); // 'table' or 'order'
 
 
 
@@ -243,7 +244,7 @@ const getNextStatusText = (currentStatus: string) => {
         </div>
         
         <!-- Tabs for different views -->
-        <Tabs :default-value="activeTab" @update:model-value="value => activeTab = value" class="mb-6">
+        <Tabs :default-value="activeTab" @update:model-value="(value) => activeTab = value" class="mb-6">
           <TabsList class="grid w-full grid-cols-2">
             <TabsTrigger value="table">View by Table</TabsTrigger>
             <TabsTrigger value="order">View by Order</TabsTrigger>
@@ -285,6 +286,14 @@ const getNextStatusText = (currentStatus: string) => {
                             <div class="flex justify-between items-start">
                               <div>
                                 <div class="font-medium">{{ item.name }} × {{ item.quantity }}</div>
+                                <!-- Display selected options if available -->
+                                <div v-if="item.options && item.options.length > 0" class="text-xs text-gray-600 mt-1">
+                                  <div v-for="(option, optIdx) in item.options" :key="optIdx">
+                                    <span class="font-medium">{{ option.option_name }}:</span>
+                                    {{ option.choices.join(', ') }}
+                                    <span v-if="option.additional_price > 0"> (+{{ option.additional_price }}฿)</span>
+                                  </div>
+                                </div>
                                 <div v-if="item.special_instructions" class="text-xs italic mt-1">
                                   {{ item.special_instructions }}
                                 </div>
@@ -339,6 +348,14 @@ const getNextStatusText = (currentStatus: string) => {
                       <div class="flex justify-between items-start">
                         <div>
                           <div class="font-medium">{{ item.name }} × {{ item.quantity }}</div>
+                          <!-- Display selected options if available -->
+                          <div v-if="item.options && item.options.length > 0" class="text-xs text-gray-600 ml-5 mt-1">
+                            <div v-for="(option, optIdx) in item.options" :key="optIdx">
+                              <span class="font-medium">{{ option.option_name }}:</span>
+                              {{ option.choices.join(', ') }}
+                              <span v-if="option.additional_price > 0"> (+{{ option.additional_price }}฿)</span>
+                            </div>
+                          </div>
                           <div v-if="item.special_instructions" class="text-xs italic mt-1">
                             {{ item.special_instructions }}
                           </div>

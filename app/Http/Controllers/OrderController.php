@@ -168,6 +168,7 @@ class OrderController extends Controller
             'items.*.menu_id' => 'required|exists:menus,id',
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.special_instructions' => 'nullable|string',
+            'items.*.selected_options' => 'nullable|array',
             'customer_notes' => 'nullable|string'
         ];
 
@@ -192,13 +193,41 @@ class OrderController extends Controller
                 
                 $totalAmount += $menuItem->price * $item['quantity'];
 
+                // Calculate additional price from selected options
+                $optionsPrice = 0;
+                $selectedOptions = [];
+                
+                if (isset($item['selected_options']) && is_array($item['selected_options'])) {
+                    $selectedOptions = $item['selected_options'];
+                    
+                    // Calculate additional price from options if menu item has options defined
+                    if (!empty($menuItem->options) && is_array($menuItem->options)) {
+                        foreach ($menuItem->options as $optionGroup) {
+                            if (isset($optionGroup['values']) && is_array($optionGroup['values'])) {
+                                foreach ($optionGroup['values'] as $optionValue) {
+                                    // Check if this option is selected
+                                    $optionName = $optionValue['name'] ?? '';
+                                    if (in_array($optionName, array_column($selectedOptions, 'option_name'))) {
+                                        $optionsPrice += ($optionValue['price'] ?? 0);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Calculate total item price including options
+                $itemPrice = $menuItem->price + $optionsPrice;
+                $totalAmount += ($itemPrice * $item['quantity']) - ($menuItem->price * $item['quantity']); // Add only the options price to total
+                
                 $orderItems[] = [
                     'menu_id' => $menuItem->id,
                     'name' => $menuItem->name,
                     'quantity' => $item['quantity'],
-                    'price' => $menuItem->price,
+                    'price' => $itemPrice,
                     'status' => 'pending',
                     'special_instructions' => $item['special_instructions'] ?? null,
+                    'options' => $selectedOptions,
                 ];
                 
                 Log::info('Order item prepared:', ['order_item' => end($orderItems)]);

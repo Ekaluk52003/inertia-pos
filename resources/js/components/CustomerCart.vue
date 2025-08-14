@@ -10,13 +10,35 @@ const page = usePage();
 const processing = computed(() => page.props.processing);
 const errors = computed(() => page.props.errors || {});
 
+// Define interfaces for type safety
+interface OrderItem {
+    id: number;
+    name: string;
+    price: number;
+    quantity: number;
+    status: 'pending' | 'cooking' | 'ready' | 'served';
+    special_instructions?: string | null;
+    options?: any[] | null;
+    created_at: string;
+}
+
+interface Order {
+    id: number;
+    code: string;
+    table_number: string;
+    total_amount: number;
+    is_paid: boolean;
+    items: OrderItem[];
+    created_at: string;
+}
+
 // Props
 interface Props {
     restaurantId: number;
     tableCode: string;
     payBefore: boolean;
-    activeOrder?: any;
-    orderHistory?: any[];
+    activeOrder?: Order;
+    orderHistory?: Order[];
 }
 
 const props = defineProps<Props>();
@@ -26,6 +48,33 @@ const cartStore = useCartStore();
 
 // Tab state
 const activeTab = ref('cart'); // 'cart' or 'history'
+
+// Calculate total price for an item including options
+const calculateItemTotal = (item: any): number => {
+    let total = Number(item.price) * (item.quantity || 1);
+    
+    // Add additional price from options if available
+    if (item.options && Array.isArray(item.options)) {
+        item.options.forEach((option: any) => {
+            if (option.additional_price) {
+                total += Number(option.additional_price) * (item.quantity || 1);
+            }
+        });
+    }
+    
+    return total;
+};
+
+// Calculate total price for an entire order including all items and their options
+const calculateOrderTotal = (order: any): number => {
+    if (!order || !order.items || !Array.isArray(order.items)) {
+        return Number(order?.total_amount || 0);
+    }
+    
+    return order.items.reduce((total: number, item: any) => {
+        return total + calculateItemTotal(item);
+    }, 0);
+};
 
 // Set active order if provided in props
 if (props.activeOrder) {
@@ -137,13 +186,13 @@ const submitOrder = () => {
         >
             <ShoppingCart class="mr-2 h-4 w-4" />
             <span v-if="cartStore.totalItemCount > 0">
-                {{ cartStore.totalItemCount }} items
+                {{ cartStore.totalItemCount }} {{ cartStore.totalItemCount === 1 ? 'item' : 'items' }}
                 <template v-if="cartStore.cartTotal > 0"> · {{ cartStore.formatPrice(cartStore.cartTotal) }}</template>
                 <template v-if="cartStore.hasActiveOrderItems">
                     <span class="ml-1 inline-flex h-2 w-2 rounded-full bg-green-500"></span>
                 </template>
             </span>
-            <span v-else>Cart</span>
+            <span v-else>Cart (0)</span>
             <ChevronUp v-if="cartStore.showCart" class="ml-2 h-4 w-4" />
             <ChevronDown v-else class="ml-2 h-4 w-4" />
         </Button>
@@ -213,9 +262,9 @@ const submitOrder = () => {
                                     <!-- Display selected options -->
                                     <div v-if="cartItem.selectedOptions.length > 0" class="mt-1">
                                         <div v-for="(option, optIdx) in cartItem.selectedOptions" :key="optIdx" class="text-xs text-muted-foreground">
-                                            <span class="font-medium">{{ option.optionName }}:</span>
+                                            <span class="font-medium">{{ option.option_name }}:</span>
                                             {{ option.choices.join(', ') }}
-                                            <span v-if="option.additionalPrice > 0"> (+{{ cartStore.formatPrice(option.additionalPrice) }}) </span>
+                                            <span v-if="option.additional_price > 0"> (+{{ cartStore.formatPrice(option.additional_price) }}) </span>
                                         </div>
                                     </div>
                                     <!-- Display notes if any -->
@@ -249,65 +298,7 @@ const submitOrder = () => {
                     
                     <!-- Order History Section -->
                     <div v-if="cartStore.hasOrderHistory || cartStore.hasActiveOrderItems" class="space-y-6">
-                        <!-- Most Recent Active Order (if available) -->
-                        <div v-if="cartStore.hasActiveOrderItems" class="rounded-lg bg-white border p-4 mb-6">
-                            <!-- Order ID and Info -->
-                            <div class="mb-4 flex justify-between items-center">
-                                <h3 class="text-sm font-medium text-gray-500">ORD-{{ props.activeOrder?.code || '000000' }}</h3>
-                                <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">Current Order</span>
-                            </div>
-                            
-                            <!-- Order Items -->
-                            <div class="space-y-3">
-                                <!-- Pending Items -->
-                                <div v-for="(item, index) in cartStore.pendingItems" :key="'pending-'+index" class="flex justify-between items-center">
-                                    <div class="flex items-center">
-                                        <span class="mr-2">{{ item.quantity || 1 }}x</span>
-                                        <span>{{ item.name }}</span>
-                                    </div>
-                                    <div class="flex items-center">
-                                        <span class="mr-2">{{ cartStore.formatPrice(item.price) }}</span>
-                                        <span class="rounded-full bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-800">pending</span>
-                                    </div>
-                                </div>
-                                
-                                <!-- Cooking Items -->
-                                <div v-for="(item, index) in cartStore.cookingItems" :key="'cooking-'+index" class="flex justify-between items-center">
-                                    <div class="flex items-center">
-                                        <span class="mr-2">{{ item.quantity || 1 }}x</span>
-                                        <span>{{ item.name }}</span>
-                                    </div>
-                                    <div class="flex items-center">
-                                        <span class="mr-2">{{ cartStore.formatPrice(item.price) }}</span>
-                                        <span class="rounded-full bg-orange-100 px-2 py-1 text-xs font-medium text-orange-800">cooking</span>
-                                    </div>
-                                </div>
-                                
-                                <!-- Ready Items -->
-                                <div v-for="(item, index) in cartStore.readyItems" :key="'ready-'+index" class="flex justify-between items-center">
-                                    <div class="flex items-center">
-                                        <span class="mr-2">{{ item.quantity || 1 }}x</span>
-                                        <span>{{ item.name }}</span>
-                                    </div>
-                                    <div class="flex items-center">
-                                        <span class="mr-2">{{ cartStore.formatPrice(item.price) }}</span>
-                                        <span class="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-800">ready</span>
-                                    </div>
-                                </div>
-                                
-                                <!-- Served Items -->
-                                <div v-for="(item, index) in cartStore.servedItems" :key="'served-'+index" class="flex justify-between items-center">
-                                    <div class="flex items-center">
-                                        <span class="mr-2">{{ item.quantity || 1 }}x</span>
-                                        <span>{{ item.name }}</span>
-                                    </div>
-                                    <div class="flex items-center">
-                                        <span class="mr-2">{{ cartStore.formatPrice(item.price) }}</span>
-                                        <span class="rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-800">served</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+
                         
                         <!-- Past Orders from History -->
                         <div v-for="(order, orderIndex) in cartStore.orderHistory" :key="'order-'+orderIndex" class="rounded-lg bg-gray-50 border p-4 mb-4">
@@ -324,22 +315,32 @@ const submitOrder = () => {
                             
                             <!-- Order Items -->
                             <div class="space-y-2">
-                                <div v-if="!order.order_items || order.order_items.length === 0" class="text-center py-2 text-gray-500 text-sm">
+                                <div v-if="!order.items || order.items.length === 0" class="text-center py-2 text-gray-500 text-sm">
                                     No items in this order
                                 </div>
-                                <div v-for="(item, itemIndex) in order.order_items || []" :key="'item-'+orderIndex+'-'+itemIndex" class="flex justify-between items-start py-1">
-                                    <div class="flex flex-col">
-                                        <div class="flex items-center">
-                                            <span class="mr-2">{{ item.quantity || 1 }}x</span>
-                                            <span>{{ item.name }}</span>
-                                        </div>
-                                        <div v-if="item.special_instructions" class="text-xs text-gray-500 italic ml-5 mt-1">
-                                            {{ item.special_instructions }}
-                                        </div>
-                                    </div>
+                                <div v-for="(item, itemIndex) in order.items || []" :key="'item-'+orderIndex+'-'+itemIndex" class="flex justify-between items-start py-1">
+                                     <div class="flex flex-col">
+                                         <div class="flex items-center">
+                                             <span class="mr-2">{{ item.quantity || 1 }}x</span>
+                                             <span>{{ item.name }}</span>
+                                         </div>
+                                         <!-- Display selected options if available -->
+                                         <div v-if="item.options && item.options.length > 0" class="text-xs text-gray-600 ml-5 mt-1">
+                                             <div v-for="(option, optIdx) in item.options" :key="optIdx">
+                                                 <span class="font-medium">{{ option.option_name }}:</span>
+                                                 {{ option.choices?.join(', ') || option.option_name }}
+                                                 <span v-if="option.additional_price > 0"> (+{{ cartStore.formatPrice(option.additional_price) }})</span>
+                                             </div>
+                                         </div>
+                                         <div v-if="item.special_instructions" class="text-xs text-gray-500 italic ml-5 mt-1">
+                                             {{ item.special_instructions }}
+                                         </div>
+                                     </div>
                                     
                                     <div class="flex items-center">
-                                        <span class="mr-2">{{ cartStore.formatPrice(item.price) }}</span>
+                                        <span class="mr-2">
+                                            {{ cartStore.formatPrice(calculateItemTotal(item)) }}
+                                        </span>
                                         <span class="rounded-full px-2 py-1 text-xs font-medium"
                                             :class="{
                                                 'bg-yellow-100 text-yellow-800': item.status === 'pending',
@@ -356,7 +357,7 @@ const submitOrder = () => {
                             <!-- Order Total -->
                             <div class="mt-4 pt-2 border-t border-gray-200 flex justify-between items-center">
                                 <span class="font-medium">Total</span>
-                                <span class="font-medium">{{ cartStore.formatPrice(order.total_amount) }}</span>
+                                <span class="font-medium">{{ cartStore.formatPrice(calculateOrderTotal(order)) }}</span>
                             </div>
                         </div>
                     </div>

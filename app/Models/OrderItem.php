@@ -22,6 +22,7 @@ class OrderItem extends Model
         'price',
         'status',
         'special_instructions',
+        'options',
     ];
 
     /**
@@ -32,6 +33,7 @@ class OrderItem extends Model
     protected $casts = [
         'price' => 'decimal:2',
         'quantity' => 'integer',
+        'options' => 'array',
     ];
 
     /**
