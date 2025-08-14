@@ -85,8 +85,16 @@ const imageFile = ref<File | null>(null);
 // Initialize reactive state for attributes
 const attributes = ref<MenuItemAttribute[]>(props.menuItem.options || []);
 const newAttributeName = ref('');
-const newAttributeValue = ref('');
-const newAttributePrice = ref(0);
+// Create a map to store new values and prices for each attribute
+const attributeValues = ref<Map<number, {value: string, price: number}>>(new Map());
+
+// Helper function to get or initialize attribute values
+const getAttributeValues = (index: number) => {
+  if (!attributeValues.value.has(index)) {
+    attributeValues.value.set(index, { value: '', price: 0 });
+  }
+  return attributeValues.value.get(index)!;
+};
 
 // Add a new attribute
 const addAttribute = () => {
@@ -103,13 +111,16 @@ const addAttribute = () => {
 
 // Add a new value to an attribute
 const addValueToAttribute = (attributeIndex: number) => {
-  if (newAttributeValue.value.trim() && attributeIndex >= 0 && attributeIndex < attributes.value.length) {
+  const attrValues = getAttributeValues(attributeIndex);
+  
+  if (attrValues.value.trim() && attributeIndex >= 0 && attributeIndex < attributes.value.length) {
     attributes.value[attributeIndex].values.push({
-      name: newAttributeValue.value.trim(),
-      price: newAttributePrice.value,
+      name: attrValues.value.trim(),
+      price: attrValues.price,
     });
-    newAttributeValue.value = '';
-    newAttributePrice.value = 0;
+    // Reset values after adding
+    attrValues.value = '';
+    attrValues.price = 0;
   }
 };
 
@@ -134,11 +145,16 @@ const form = useForm({
   description: props.menuItem.description || '',
   price: props.menuItem.price,
   category: props.menuItem.category,
-  is_available: props.menuItem.is_available,
+  is_available: props.menuItem.is_available === true, // Ensure it's a strict boolean
   image: null as File | null,
   image_url: imageUrl.value || '',
   options: [] as any, // Will be set before submission
 });
+
+// Log form data for debugging
+console.log('Form initialized with is_available:', form.is_available);
+console.log('Original menuItem.is_available:', props.menuItem.is_available);
+console.log('Type of menuItem.is_available:', typeof props.menuItem.is_available);
 
 // Watch for changes in attributes and update form
 watch(attributes, (newAttributes) => {
@@ -147,6 +163,9 @@ watch(attributes, (newAttributes) => {
 
 // Initialize form options
 form.options = JSON.parse(JSON.stringify(attributes.value));
+
+// Log the initial is_available value for debugging
+console.log('Initial is_available value:', props.menuItem.is_available);
 
 // Handle file input change
 const handleFileChange = (event: Event) => {
@@ -175,7 +194,7 @@ const toggleImageInputType = () => {
   imageInputType.value = imageInputType.value === 'file' ? 'url' : 'file';
   // Clear the other input type when switching
   if (imageInputType.value === 'file') {
-    form.image_url = null;
+    form.image_url = '';
     imageUrl.value = '';
   } else {
     form.image = null;
@@ -187,9 +206,23 @@ const toggleImageInputType = () => {
 
 // Form submission
 const submit = () => {
+  // Log form data before submission for debugging
+  console.log('Submitting form with is_available:', form.is_available);
+  console.log('Form data before submission:', JSON.stringify(form));
+  
+  // Force is_available to be a boolean true if checked
+  if (form.is_available) {
+    form.is_available = true;
+  } else {
+    form.is_available = false;
+  }
+  
+  console.log('Form data after boolean conversion:', JSON.stringify(form));
+  
   form.submit(props.submitMethod as 'post' | 'put', props.submitUrl, {
     preserveScroll: true,
-    onSuccess: () => {
+    onSuccess: (response) => {
+      console.log('Form submission successful, response:', response);
       // Success notification could be added here
     }
   });
@@ -400,7 +433,7 @@ const submit = () => {
                   <Label :for="`attr-value-${attrIndex}`">Add Value</Label>
                   <Input 
                     :id="`attr-value-${attrIndex}`" 
-                    v-model="newAttributeValue" 
+                    v-model="getAttributeValues(attrIndex).value" 
                     placeholder="e.g., Small, Medium, Large" 
                     :disabled="form.processing"
                   />
@@ -409,7 +442,7 @@ const submit = () => {
                   <Label :for="`attr-price-${attrIndex}`">Price</Label>
                   <Input 
                     :id="`attr-price-${attrIndex}`" 
-                    v-model.number="newAttributePrice" 
+                    v-model.number="getAttributeValues(attrIndex).price" 
                     type="number" 
                     min="0" 
                     step="0.01"
@@ -422,7 +455,7 @@ const submit = () => {
                   variant="outline" 
                   size="sm"
                   @click="addValueToAttribute(attrIndex)"
-                  :disabled="form.processing || !newAttributeValue.trim()"
+                  :disabled="form.processing || !getAttributeValues(attrIndex).value.trim()"
                 >
                   Add
                 </Button>
@@ -458,13 +491,32 @@ const submit = () => {
           </div>
         </div>
         
-        <div class="flex items-center space-x-2">
-          <Switch 
-            id="is_available" 
-            v-model:checked="form.is_available" 
-            :disabled="form.processing"
-          />
-          <Label for="is_available">Available for ordering</Label>
+        <div class="space-y-2">
+          <div class="text-sm font-medium">Availability</div>
+          <div class="flex items-center space-x-4">
+            <div class="flex items-center space-x-2">
+              <input 
+                type="radio" 
+                id="available_yes" 
+                name="is_available" 
+                :value="true" 
+                v-model="form.is_available"
+                :disabled="form.processing"
+              />
+              <Label for="available_yes">Available</Label>
+            </div>
+            <div class="flex items-center space-x-2">
+              <input 
+                type="radio" 
+                id="available_no" 
+                name="is_available" 
+                :value="false" 
+                v-model="form.is_available"
+                :disabled="form.processing"
+              />
+              <Label for="available_no">Unavailable</Label>
+            </div>
+          </div>
         </div>
         
         <div class="flex justify-end space-x-2">

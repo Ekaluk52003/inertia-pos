@@ -124,6 +124,10 @@ class MenuController extends Controller
     public function update(Request $request, Restaurant $restaurant, Menu $menu)
     {
         $this->authorize('update', $menu);
+        
+        // Debug incoming request data
+        \Illuminate\Support\Facades\Log::debug('Menu update request data:', $request->all());
+        \Illuminate\Support\Facades\Log::debug('Current menu is_available value: ' . ($menu->is_available ? 'true' : 'false'));
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
@@ -168,7 +172,23 @@ class MenuController extends Controller
             $validated['image_path'] = $request->input('image_url');
         }
 
+        // Debug validated data before saving
+        \Illuminate\Support\Facades\Log::debug('Validated data before update:', $validated);
+        
+        // Explicitly set is_available to ensure it's properly handled
+        if (isset($validated['is_available'])) {
+            $validated['is_available'] = (bool)$validated['is_available'];
+            \Illuminate\Support\Facades\Log::debug('is_available after boolean conversion: ' . ($validated['is_available'] ? 'true' : 'false'));
+        } else {
+            // If is_available is not in the validated data, set a default
+            $validated['is_available'] = false;
+            \Illuminate\Support\Facades\Log::debug('is_available not in validated data, setting default: false');
+        }
+        
         $menu->update($validated);
+        
+        // Debug after update
+        \Illuminate\Support\Facades\Log::debug('Menu after update, is_available: ' . ($menu->fresh()->is_available ? 'true' : 'false'));
 
         return redirect()->route('menu.index', $restaurant)
             ->with('success', 'Menu item updated successfully.');
