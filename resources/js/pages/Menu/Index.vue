@@ -2,35 +2,35 @@
 import { Head, Link, router } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { 
-  Card, 
-  CardContent, 
-  CardDescription, 
-  CardHeader, 
-  CardTitle 
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge/index';
-import { 
-  PlusCircle, 
-  Pencil, 
-  Trash2, 
-  ToggleLeft, 
-  ToggleRight, 
-  ChefHat, 
-  ClipboardList, 
-  Menu as MenuIcon, 
-  QrCode, 
-  Settings, 
-  Users 
+import {
+  PlusCircle,
+  Pencil,
+  Trash2,
+  ToggleLeft,
+  ToggleRight,
+  ChefHat,
+  ClipboardList,
+  Menu as MenuIcon,
+  QrCode,
+  Settings,
+  Users
 } from 'lucide-vue-next';
 import type { BreadcrumbItemType, NavItem } from '@/types';
 
@@ -85,9 +85,9 @@ const formatAttributeValue = (value: AttributeValue) => {
 const toggleAvailability = (menuItem: MenuItem) => {
   // Use Inertia to make a PATCH request to toggle availability
   const url = route('menu.toggle', [props.restaurant.id, menuItem.id]);
-  
+
   // Use Inertia router to make a PATCH request
-  router.visit(url, { 
+  router.visit(url, {
     method: 'patch',
     preserveScroll: true,
     preserveState: true,
@@ -101,8 +101,8 @@ const toggleAvailability = (menuItem: MenuItem) => {
 const deleteMenuItem = (menuItem: MenuItem) => {
   if (confirm(`Are you sure you want to delete ${menuItem.name}?`)) {
     const url = route('menu.destroy', [props.restaurant.id, menuItem.id]);
-    
-    router.visit(url, { 
+
+    router.visit(url, {
       method: 'delete',
       preserveScroll: true,
       onSuccess: () => {
@@ -118,14 +118,14 @@ const menuItemsByCategory = ref<Record<string, MenuItem[]>>({});
 // Process menu items and group them by category
 const processMenuItems = () => {
   const grouped: Record<string, MenuItem[]> = {};
-  
+
   props.menuItems.forEach(item => {
     if (!grouped[item.category]) {
       grouped[item.category] = [];
     }
     grouped[item.category].push(item);
   });
-  
+
   menuItemsByCategory.value = grouped;
 };
 
@@ -135,8 +135,8 @@ processMenuItems();
 // Define breadcrumb items
 const breadcrumbItems = computed(() => {
   return [
-    { title: 'Restaurants', 
-      href: route('restaurants.index') 
+    { title: 'Restaurants',
+      href: route('restaurants.index')
      },
     { title: props.restaurant.name, href: route('restaurants.show', props.restaurant.id) },
     { title: 'Menu', href: route('menu.index', props.restaurant.id) },
@@ -157,38 +157,24 @@ const navItems: NavItem[] = [
 <template>
   <AppLayout :breadcrumbs="breadcrumbItems">
     <Head :title="`Menu - ${props.restaurant.name}`" />
-    
-    <div class="flex h-full flex-1 flex-col gap-4 rounded-xl p-4 overflow-x-auto">  
-      <!-- Navigation Cards -->
-      <div class="grid gap-4 md:grid-cols-3 lg:grid-cols-6 mb-6">
-        <Card 
-          v-for="item in navItems" 
-          :key="item.title" 
-          :class="['cursor-pointer hover:bg-muted/50 transition-colors', { 'bg-muted/50': item.isActive }]"
-        >
-          <Link :href="item.href" class="block">
-            <div class="flex flex-col items-center justify-center p-4">
-              <component :is="item.icon" class="h-6 w-6 mb-2" />
-              <span class="text-sm font-medium">{{ item.title }}</span>
-            </div>
-          </Link>
-        </Card>
-      </div>
+
+    <div class="flex h-full flex-1 flex-col gap-4 rounded-xl p-4 overflow-x-auto">
+
       <div class="flex items-center justify-between mb-6">
         <div>
           <h1 class="text-3xl font-bold tracking-tight">Menu Management</h1>
           <p class="text-muted-foreground">Manage menu items for {{ props.restaurant.name }}</p>
         </div>
-        
-        <Link 
-          :href="route('menu.create', props.restaurant.id)" 
+
+        <Link
+          :href="route('menu.create', props.restaurant.id)"
           class="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary/90"
         >
           <PlusCircle class="h-4 w-4" />
           Add Menu Item
         </Link>
       </div>
-      
+
       <!-- Menu Items Table -->
       <Card>
         <CardHeader>
@@ -215,9 +201,9 @@ const navItems: NavItem[] = [
                 <TableRow v-for="item in props.menuItems" :key="item.id" class="hover:bg-muted/50">
                   <TableCell>
                     <div class="h-12 w-12 overflow-hidden rounded-md">
-                      <img 
-                        v-if="item.image_path" 
-                        :src="item.image_path.startsWith('http') ? item.image_path : `/storage/${item.image_path}`" 
+                      <img
+                        v-if="item.image_path"
+                        :src="item.image_path.startsWith('http') ? item.image_path : `/storage/${item.image_path}`"
                         :alt="item.name"
                         class="h-full w-full object-cover"
                       />
@@ -233,7 +219,7 @@ const navItems: NavItem[] = [
                     <!-- Display attributes if any -->
                     <div v-if="item.options && item.options.length > 0" class="flex flex-col gap-1 mb-1">
                       <div v-for="(attr, index) in item.options" :key="index" class="text-xs">
-                        <span class="font-medium">{{ attr.name }}:</span> 
+                        <span class="font-medium">{{ attr.name }}:</span>
                         <span class="text-muted-foreground">
                           {{ attr.values.map(value => formatAttributeValue(value)).join(', ') }}
                         </span>
@@ -241,7 +227,7 @@ const navItems: NavItem[] = [
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge :variant="item.is_available ? 'default' : 'secondary'" 
+                    <Badge :variant="item.is_available ? 'default' : 'secondary'"
                       :class="item.is_available ? 'bg-green-500' : ''"
                     >
                       {{ item.is_available ? 'Available' : 'Unavailable' }}
@@ -249,31 +235,31 @@ const navItems: NavItem[] = [
                   </TableCell>
                   <TableCell>
                     <div class="flex items-center gap-2">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        @click="toggleAvailability(item)" 
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        @click="toggleAvailability(item)"
                         :title="item.is_available ? 'Mark as unavailable' : 'Mark as available'"
                       >
-                        <component 
-                          :is="item.is_available ? ToggleRight : ToggleLeft" 
-                          class="h-4 w-4" 
+                        <component
+                          :is="item.is_available ? ToggleRight : ToggleLeft"
+                          class="h-4 w-4"
                           :class="item.is_available ? 'text-green-500' : 'text-gray-500'"
                         />
                       </Button>
-                      
-                      <Link 
-                        :href="route('menu.edit', [restaurant.id, item.id])" 
+
+                      <Link
+                        :href="route('menu.edit', [restaurant.id, item.id])"
                         class="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted"
                         title="Edit"
                       >
                         <Pencil class="h-4 w-4" />
                       </Link>
-                      
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        @click="deleteMenuItem(item)" 
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        @click="deleteMenuItem(item)"
                         title="Delete"
                       >
                         <Trash2 class="h-4 w-4 text-red-500" />
@@ -291,15 +277,15 @@ const navItems: NavItem[] = [
           </Table>
         </CardContent>
       </Card>
-      
+
       <!-- Menu Items By Category -->
       <div class="mt-8">
         <h2 class="text-2xl font-bold mb-4">Menu Items by Category</h2>
-        
+
         <div v-if="Object.keys(menuItemsByCategory).length === 0" class="text-center py-8 text-muted-foreground">
           No menu items found. Add some menu items to see them organized by category.
         </div>
-        
+
         <div v-else class="grid gap-6 md:grid-cols-2">
           <Card v-for="(items, category) in menuItemsByCategory" :key="category">
             <CardHeader>
@@ -311,9 +297,9 @@ const navItems: NavItem[] = [
                 <li v-for="item in items" :key="item.id" class="flex items-center justify-between border-b pb-2">
                   <div class="flex items-center gap-3">
                     <div class="h-12 w-12 overflow-hidden rounded-md flex-shrink-0">
-                      <img 
-                        v-if="item.image_path" 
-                        :src="item.image_path.startsWith('http') ? item.image_path : `/storage/${item.image_path}`" 
+                      <img
+                        v-if="item.image_path"
+                        :src="item.image_path.startsWith('http') ? item.image_path : `/storage/${item.image_path}`"
                         :alt="item.name"
                         class="h-full w-full object-cover"
                       />
@@ -327,7 +313,7 @@ const navItems: NavItem[] = [
                       <!-- Display attributes in category view -->
                       <div v-if="item.options && item.options.length > 0" class="flex flex-wrap gap-x-3 gap-y-1 mt-1">
                         <div v-for="(attr, index) in item.options" :key="index" class="text-xs">
-                          <span class="font-medium">{{ attr.name }}:</span> 
+                          <span class="font-medium">{{ attr.name }}:</span>
                           <span class="text-muted-foreground">
                             {{ attr.values.map(value => formatAttributeValue(value)).join(', ') }}
                           </span>
@@ -336,7 +322,7 @@ const navItems: NavItem[] = [
                     </div>
                   </div>
                   <div class="flex items-center gap-2">
-                    <Badge :variant="item.is_available ? 'default' : 'secondary'" 
+                    <Badge :variant="item.is_available ? 'default' : 'secondary'"
                       :class="[item.is_available ? 'bg-green-500' : '', 'mr-2']"
                     >
                       {{ item.is_available ? 'Available' : 'Unavailable' }}
@@ -349,10 +335,10 @@ const navItems: NavItem[] = [
           </Card>
         </div>
       </div>
-      
+
       <div class="mt-6">
-        <Link 
-          :href="route('restaurants.show', props.restaurant.id)" 
+        <Link
+          :href="route('restaurants.show', props.restaurant.id)"
           class="text-sm font-medium hover:underline"
         >
           Back to Restaurant Dashboard

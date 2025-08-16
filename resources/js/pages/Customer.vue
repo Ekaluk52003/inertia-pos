@@ -1,13 +1,13 @@
 <script setup lang="ts">
+import CustomerCart from '@/components/CustomerCart.vue';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import CustomerCart from '@/components/CustomerCart.vue';
 import CustomerLayout from '@/layouts/customerLayout.vue';
-import { Head, usePage } from '@inertiajs/vue3';
 import { useCartStore } from '@/stores/cartStore';
-import { ref, computed, watch, onMounted } from 'vue';
-import { Plus, CheckCircle2, AlertCircle } from 'lucide-vue-next';
+import { Head, usePage } from '@inertiajs/vue3';
+import { AlertCircle, CheckCircle2, Plus } from 'lucide-vue-next';
+import { computed, onMounted, ref, watch } from 'vue';
 
 // Initialize cart store
 const cartStore = useCartStore();
@@ -24,42 +24,46 @@ const showFlash = ref(false);
 const flashTimeout = ref<number | null>(null);
 
 // Watch for flash messages and handle them
-watch(() => flash.value, (newFlash) => {
-    if (newFlash.success || newFlash.error) {
-        showFlash.value = true;
-        
-        // Auto-hide flash message after 5 seconds
-        if (flashTimeout.value) {
-            clearTimeout(flashTimeout.value);
+watch(
+    () => flash.value,
+    (newFlash) => {
+        if (newFlash.success || newFlash.error) {
+            showFlash.value = true;
+
+            // Auto-hide flash message after 5 seconds
+            if (flashTimeout.value) {
+                clearTimeout(flashTimeout.value);
+            }
+
+            flashTimeout.value = window.setTimeout(() => {
+                showFlash.value = false;
+            }, 5000);
         }
-        
-        flashTimeout.value = window.setTimeout(() => {
-            showFlash.value = false;
-        }, 5000);
-    }
-    
-    // If we have a new order created, make sure to refresh the order history tab
-    if (newFlash.flash_order_created && props.activeOrder) {
-        // Update the cart store with the latest active order
-        cartStore.setActiveOrder(props.activeOrder);
-        
-        // Switch to the history tab to show the new order
-        if (cartStore.showCart) {
-            setTimeout(() => {
-                const historyTabButton = document.querySelector('[data-tab="history"]');
-                if (historyTabButton) {
-                    (historyTabButton as HTMLElement).click();
-                }
-            }, 300);
+
+        // If we have a new order created, make sure to refresh the order history tab
+        if (newFlash.flash_order_created && props.activeOrder) {
+            // Update the cart store with the latest active order
+            cartStore.setActiveOrder(props.activeOrder);
+
+            // Switch to the history tab to show the new order
+            if (cartStore.showCart) {
+                setTimeout(() => {
+                    const historyTabButton = document.querySelector('[data-tab="history"]');
+                    if (historyTabButton) {
+                        (historyTabButton as HTMLElement).click();
+                    }
+                }, 300);
+            }
         }
-    }
-}, { immediate: true });
+    },
+    { immediate: true },
+);
 
 // Clear flash timeout on component unmount
 onMounted(() => {
     if (flash.value.success || flash.value.error) {
         showFlash.value = true;
-        
+
         flashTimeout.value = window.setTimeout(() => {
             showFlash.value = false;
         }, 5000);
@@ -89,7 +93,7 @@ const props = defineProps<Props>();
 interface MenuItem {
     id: number;
     name: string;
-    description?: string;
+    description: string | null;
     price: number;
     category: string;
     image_path?: string;
@@ -198,16 +202,16 @@ const scrollToCategory = (category: string) => {
 <template>
     <CustomerLayout>
         <Head :title="`${restaurant.name} - Table ${table.number}`" />
-        
+
         <!-- Flash Messages -->
-        <div v-if="showFlash" class="fixed top-4 left-4 right-4 z-50">
-            <Alert v-if="flash.success" class="bg-green-50 border-green-200 mb-2">
+        <div v-if="showFlash" class="fixed top-4 right-4 left-4 z-50">
+            <Alert v-if="flash.success" class="mb-2 border-green-200 bg-green-50">
                 <CheckCircle2 class="h-4 w-4 text-green-500" />
                 <AlertTitle class="text-green-800">Success</AlertTitle>
                 <AlertDescription class="text-green-700">{{ flash.success }}</AlertDescription>
             </Alert>
-            
-            <Alert v-if="flash.error" class="bg-red-50 border-red-200">
+
+            <Alert v-if="flash.error" class="border-red-200 bg-red-50">
                 <AlertCircle class="h-4 w-4 text-red-500" />
                 <AlertTitle class="text-red-800">Error</AlertTitle>
                 <AlertDescription class="text-red-700">{{ flash.error }}</AlertDescription>
@@ -244,7 +248,13 @@ const scrollToCategory = (category: string) => {
                     <Card v-for="item in menuItemsByCategory[category]" :key="item.id" class="overflow-hidden">
                         <div class="flex">
                             <div v-if="item.image_path" class="h-24 w-24 flex-shrink-0 bg-gray-100">
-                                <img :src="item.image_path" :alt="item.name" class="h-full w-full object-cover" />
+                                <img
+                                    :src="item.image_path"
+                                    :alt="item.name"
+                                    class="h-full w-full object-cover"
+                                    @error="() => console.error('Image failed to load:', item.image_path)"
+                                />
+                                {{ console.log('Image path:', item.image_path) }}
                             </div>
 
                             <div class="flex-1 p-4">
@@ -276,9 +286,9 @@ const scrollToCategory = (category: string) => {
         </div>
 
         <!-- Cart Component -->
-        <CustomerCart 
-            :restaurant-id="props.restaurant.id" 
-            :table-code="props.table.code" 
+        <CustomerCart
+            :restaurant-id="props.restaurant.id"
+            :table-code="props.table.code"
             :pay-before="props.restaurant.payBefore"
             :prompt-pay-id="props.restaurant.promptPayId"
             :active-order="props.activeOrder"

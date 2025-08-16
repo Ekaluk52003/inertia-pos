@@ -58,22 +58,22 @@ interface Restaurant {
 
 interface Props {
   restaurant: Restaurant;
-  recentOrders: Order[];
-  popularItems: MenuItem[];
-  stats: {
-    todayOrders: number;
-    todayRevenue: number;
-    activeTables: number;
-    pendingOrders: number;
-  };
+  // recentOrders: Order[];
+  // popularItems: MenuItem[];
+  // stats: {
+  //   todayOrders: number;
+  //   todayRevenue: number;
+  //   activeTables: number;
+  //   pendingOrders: number;
+  // };
 }
 
 const props = defineProps<Props>();
 
 const breadcrumbItems = computed(() => {
   return [
-    { title: 'Restaurants', 
-      href: route('restaurants.index') 
+    { title: 'Restaurants',
+      href: route('restaurants.index')
      },
     { title: props.restaurant.name, href: route('restaurants.show', props.restaurant.id) },
 
@@ -95,7 +95,7 @@ const navItems = [
   <AppLayout :breadcrumbs="breadcrumbItems">
     <div class="flex h-full flex-1 flex-col gap-4 rounded-xl p-4 overflow-x-auto">
       <Head :title="restaurant.name + ' Dashboard'" />
-    
+
       <div class="container py-6">
         <div class="mb-6">
           <div class="flex items-center justify-between">
@@ -103,8 +103,8 @@ const navItems = [
               <h1 class="text-3xl font-bold tracking-tight">{{ restaurant.name }}</h1>
               <p class="text-muted-foreground">{{ restaurant.description }}</p>
             </div>
-            <Link 
-              :href="route('restaurants.index')" 
+            <Link
+              :href="route('restaurants.index')"
               class="text-sm font-medium hover:underline"
             >
               Back to All Restaurants
@@ -115,9 +115,9 @@ const navItems = [
 
         <!-- Navigation Cards -->
         <div class="grid gap-4 md:grid-cols-3 lg:grid-cols-6 mb-6">
-          <Card 
-            v-for="item in navItems" 
-            :key="item.name" 
+          <Card
+            v-for="item in navItems"
+            :key="item.name"
             class="cursor-pointer hover:bg-muted/50 transition-colors"
           >
             <Link :href="item.route" class="block">
@@ -129,7 +129,7 @@ const navItems = [
           </Card>
         </div>
 
-   
+
       </div>
     </div>
   </AppLayout>

@@ -18,7 +18,7 @@ use Illuminate\Http\RedirectResponse;
 class OrderController extends Controller
 {
     /**
-                    
+
      */
     public function index(Restaurant $restaurant)
     {
@@ -65,7 +65,7 @@ class OrderController extends Controller
         $orderItem = $order->orderItems()->findOrFail($validated['order_item_id']);
         $orderItem->update(['status' => $validated['status']]);
 
-        return back()->with('success', 'Order item status updated.');
+        return;
     }
 
     /**
@@ -90,10 +90,10 @@ class OrderController extends Controller
             ->orderBy('created_at', 'desc')
             ->take(50)
             ->get();
-            
+
         // Now load the order items separately
-        $allOrders->load('orderItems');       
-        
+        $allOrders->load('orderItems');
+
         // Group orders by table number and ensure proper camelCase keys for Vue
         $ordersByTable = $allOrders->groupBy('table_number')->map(function ($tableOrders) {
             return [
@@ -101,28 +101,28 @@ class OrderController extends Controller
                 'orders' => $tableOrders->map(function ($order) {
                     // Convert the order to an array
                     $orderArray = $order->toArray();
-                    
+
                     // Ensure orderItems is properly set (camelCase for Vue)
                     if (isset($orderArray['order_items'])) {
                         $orderArray['orderItems'] = $orderArray['order_items'];
                         unset($orderArray['order_items']);
                     }
-                    
+
                     return $orderArray;
                 })->values()
             ];
         })->values();
-        
+
         // Format activeOrders with proper camelCase keys for Vue
         $formattedActiveOrders = $allOrders->map(function ($order) {
             $orderArray = $order->toArray();
-            
+
             // Ensure orderItems is properly set (camelCase for Vue)
             if (isset($orderArray['order_items'])) {
                 $orderArray['orderItems'] = $orderArray['order_items'];
                 unset($orderArray['order_items']);
             }
-            
+
             return $orderArray;
         });
 
@@ -187,19 +187,19 @@ class OrderController extends Controller
         foreach ($validated['items'] as $item) {
             try {
                 Log::info('Processing menu item:', ['item' => $item]);
-                
+
                 $menuItem = $restaurant->menuItems()->findOrFail($item['menu_id']);
                 Log::info('Found menu item:', ['menu_item' => $menuItem->toArray()]);
-                
+
                 $totalAmount += $menuItem->price * $item['quantity'];
 
                 // Calculate additional price from selected options
                 $optionsPrice = 0;
                 $selectedOptions = [];
-                
+
                 if (isset($item['selected_options']) && is_array($item['selected_options'])) {
                     $selectedOptions = $item['selected_options'];
-                    
+
                     // Calculate additional price from options if menu item has options defined
                     if (!empty($menuItem->options) && is_array($menuItem->options)) {
                         foreach ($menuItem->options as $optionGroup) {
@@ -215,11 +215,11 @@ class OrderController extends Controller
                         }
                     }
                 }
-                
+
                 // Calculate total item price including options
                 $itemPrice = $menuItem->price + $optionsPrice;
                 $totalAmount += ($itemPrice * $item['quantity']) - ($menuItem->price * $item['quantity']); // Add only the options price to total
-                
+
                 $orderItems[] = [
                     'menu_id' => $menuItem->id,
                     'name' => $menuItem->name,
@@ -229,7 +229,7 @@ class OrderController extends Controller
                     'special_instructions' => $item['special_instructions'] ?? null,
                     'options' => $selectedOptions,
                 ];
-                
+
                 Log::info('Order item prepared:', ['order_item' => end($orderItems)]);
             } catch (\Exception $e) {
                 Log::error('Error processing menu item:', [
@@ -336,11 +336,11 @@ class OrderController extends Controller
                     'status' => 'pending',
                     'customer_notes' => $validated['customer_notes'] ?? null,
                 ];
-                
+
                 Log::info('Attempting to create order with:', ['order_data' => $orderData]);
-                
+
                 $order = $restaurant->orders()->create($orderData);
-                
+
                 Log::info('Order created successfully:', ['order' => $order->toArray()]);
             } catch (\Exception $e) {
                 Log::error('Failed to create order:', [
@@ -369,7 +369,7 @@ class OrderController extends Controller
 
             // Load order relationships for the flash data
             $order->load('orderItems', 'payments');
-            
+
             // Redirect back to the menu page with a flash message
             return Redirect::back()->with([
                 'success' => 'Order created successfully',
@@ -382,7 +382,7 @@ class OrderController extends Controller
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            
+
             // Redirect back to the menu page with error flash message
             return redirect()->route('public.menu', [
                 'restaurantCode' => $restaurantCode,
