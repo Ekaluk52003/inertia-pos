@@ -166,6 +166,7 @@ class PublicController extends Controller
                 'name' => $restaurant->name,
                 'description' => $restaurant->description,
                 'payBefore' => $restaurant->pay_before,
+                'promptPayId' => $restaurant->prompt_pay_id,
             ],
             'table' => [
                 'number' => $qrCode->table_number,

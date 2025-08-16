@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('orders', function (Blueprint $table) {
             $table->id();
             $table->foreignId('restaurant_id')->constrained()->onDelete('cascade');
-            $table->string('table_number');  // Changed to string to support text table names
+            $table->integer('table_number');
             $table->string('code')->unique();
             $table->decimal('total_amount', 10, 2);
             $table->boolean('is_paid')->default(false);

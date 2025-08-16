@@ -5,6 +5,7 @@ import { useCartStore } from '@/stores/cartStore';
 import { useForm, usePage, router } from '@inertiajs/vue3';
 import { ChevronDown, ChevronUp, Clock, Minus, Plus, ShoppingCart } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
+import PromptPayQRCode from '@/components/PromptPayQRCode.vue';
 
 const page = usePage();
 const processing = computed(() => page.props.processing);
@@ -37,6 +38,7 @@ interface Props {
     restaurantId: number;
     tableCode: string;
     payBefore: boolean;
+    promptPayId?: string;
     activeOrder?: Order;
     orderHistory?: Order[];
 }
@@ -48,6 +50,9 @@ const cartStore = useCartStore();
 
 // Tab state
 const activeTab = ref('cart'); // 'cart' or 'history'
+
+// State to track if payment QR code should be shown
+const showPaymentQR = ref(false);
 
 // Calculate total price for an item including options
 const calculateItemTotal = (item: any): number => {
@@ -118,9 +123,29 @@ const requestBill = () => {
 
 // Method to submit the order
 const submitOrder = () => {
+    console.log('promptPayId received:', props.promptPayId);
+    
+    // If payment is required before ordering and QR code isn't shown yet, show it
+    if (props.payBefore && !showPaymentQR.value) {
+        // Check if the restaurant has a valid promptPayId configured
+        if (!props.promptPayId || props.promptPayId.trim() === '') {
+            alert('This restaurant requires payment before ordering, but has not configured a valid payment method. Please contact the restaurant staff.');
+            return;
+        }
+        
+        showPaymentQR.value = true;
+        return;
+    }
+    
+    // If payment is required and QR code is shown, confirm payment before proceeding
+    if (props.payBefore && showPaymentQR.value) {
+        if (!confirm('Please confirm that you have completed the payment. Click OK to proceed with your order.')) {
+            return;
+        }
+    }
+    
     // Prepare order items
     const items = cartStore.prepareOrderItems();
-
 
     // Submit the form using named route
     useForm({
@@ -143,6 +168,9 @@ const submitOrder = () => {
             onSuccess: () => {
                 // Clear the cart after successful order
                 cartStore.clearCart();
+                
+                // Reset payment QR code state
+                showPaymentQR.value = false;
                 
                 router.reload({ only: ['orderHistory'] })
                 
@@ -372,6 +400,28 @@ const submitOrder = () => {
                             <span class="font-medium">Total</span>
                             <span class="font-medium">{{ cartStore.formatPrice(cartStore.cartTotal) }}</span>
                         </div>
+                        
+                        <!-- PromptPay QR Code (shown when payment is required) -->
+                        <div v-if="props.payBefore && showPaymentQR" class="my-4">
+                            <PromptPayQRCode 
+                                :promptPayId="props.promptPayId" 
+                                :amount="cartStore.cartTotal" 
+                                :label="'Table ' + props.tableCode"
+                            />
+                            <p class="mt-2 text-sm text-gray-500">
+                                Please scan the QR code to pay. After payment, click the button below to complete your order.
+                            </p>
+                            <div class="mt-3 flex justify-end">
+                                <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    @click="showPaymentQR = false"
+                                >
+                                    Cancel Payment
+                                </Button>
+                            </div>
+                        </div>
+                        
                         <Button class="mt-4 w-full" :disabled="cartStore.cart.length === 0" @click="submitOrder">
                             <span v-if="processing" class="flex items-center">
                                 <svg
@@ -389,7 +439,7 @@ const submitOrder = () => {
                                 </svg>
                                 Processing...
                             </span>
-                            <span v-else>Place Order</span>
+                            <span v-else>{{ props.payBefore ? (showPaymentQR ? 'Complete Order' : 'Pay') : 'Place Order' }}</span>
                         </Button>
                     </div>
                     

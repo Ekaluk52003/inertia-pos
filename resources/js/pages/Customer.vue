@@ -12,9 +12,12 @@ import { Plus, CheckCircle2, AlertCircle } from 'lucide-vue-next';
 // Initialize cart store
 const cartStore = useCartStore();
 
-// Get page props for flash messages
+// Get page props for flash messages and debug data
 const page = usePage();
 const flash = computed(() => page.props.flash);
+
+// Debug restaurant data
+console.log('Full restaurant object:', page.props.restaurant);
 
 // Show/hide flash message
 const showFlash = ref(false);
@@ -277,6 +280,7 @@ const scrollToCategory = (category: string) => {
             :restaurant-id="props.restaurant.id" 
             :table-code="props.table.code" 
             :pay-before="props.restaurant.payBefore"
+            :prompt-pay-id="props.restaurant.promptPayId"
             :active-order="props.activeOrder"
             :order-history="props.orderHistory"
         />

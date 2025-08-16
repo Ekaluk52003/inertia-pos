@@ -251,13 +251,13 @@ const getNextStatusText = (currentStatus: string) => {
           </TabsList>
           
           <!-- No orders message -->
-          <div v-if="props.ordersByTable.length === 0" class="text-center py-12">
+          <div v-if="!props.ordersByTable || props.ordersByTable.length === 0" class="text-center py-12">
             <p class="text-gray-500 text-lg">No active orders at the moment.</p>
           </div>
           
           <!-- View by Table Tab Content -->
           <TabsContent value="table" class="mt-0">
-            <div v-if="props.ordersByTable.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div v-if="props.ordersByTable && props.ordersByTable.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <!-- Group by table number -->
               <div v-for="tableGroup in props.ordersByTable" :key="tableGroup.table_number" class="h-full">
                 <Card class="h-full">
