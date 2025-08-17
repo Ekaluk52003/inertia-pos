@@ -6,8 +6,8 @@ import { Card } from '@/components/ui/card';
 import CustomerLayout from '@/layouts/customerLayout.vue';
 import { useCartStore } from '@/stores/cartStore';
 import { Head, usePage } from '@inertiajs/vue3';
-import { AlertCircle, CheckCircle2, Plus } from 'lucide-vue-next';
-import { computed, onMounted, ref, watch } from 'vue';
+import { AlertCircle, CheckCircle2, ShoppingCart, X, ZoomIn } from 'lucide-vue-next';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 // Initialize cart store
 const cartStore = useCartStore();
@@ -190,6 +190,46 @@ const formatPrice = (price: number) => {
     return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB' }).format(price);
 };
 
+// Color gradients to use for cards. We keep a short palette and pick by index so cards are colorful.
+const gradients = [
+    'from-yellow-400 to-pink-400',
+    'from-orange-400 to-rose-400',
+    'from-emerald-300 to-teal-400',
+    'from-indigo-400 to-sky-400',
+    'from-rose-200 to-orange-300',
+    'from-amber-300 to-yellow-400',
+    'from-fuchsia-400 to-purple-400',
+    'from-lime-300 to-emerald-400',
+];
+
+const gradientFor = (categoryIndex: number, itemIndex: number): string => {
+    const idx = (categoryIndex * 10 + itemIndex) % gradients.length;
+    return `bg-gradient-to-br ${gradients[idx]} text-white`;
+};
+
+// Image modal state
+const showImageModal = ref(false);
+const modalImageSrc = ref<string | null>(null);
+
+const openImageModal = (src: string | undefined) => {
+    if (!src) return;
+    modalImageSrc.value = src;
+    showImageModal.value = true;
+    // prevent background scroll
+    document.body.style.overflow = 'hidden';
+};
+
+const closeImageModal = () => {
+    showImageModal.value = false;
+    modalImageSrc.value = null;
+    document.body.style.overflow = '';
+};
+
+// ensure cleanup
+onBeforeUnmount(() => {
+    document.body.style.overflow = '';
+});
+
 const scrollToCategory = (category: string) => {
     activeCategory.value = category;
     const element = document.getElementById(`category-${category}`);
@@ -241,43 +281,69 @@ const scrollToCategory = (category: string) => {
             </div>
 
             <!-- Menu Items by Category -->
-            <div v-for="category in categories" :key="category" :id="`category-${category}`" class="mb-8">
+            <div v-for="(category, cidx) in categories" :key="category" :id="`category-${category}`" class="mb-8">
                 <h2 class="mb-4 text-xl font-semibold">{{ category }}</h2>
 
-                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <Card v-for="item in menuItemsByCategory[category]" :key="item.id" class="overflow-hidden">
-                        <div class="flex">
-                            <div v-if="item.image_path" class="h-24 w-24 flex-shrink-0 bg-gray-100">
+                <div class="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4">
+                    <Card
+                        v-for="(item, idx) in menuItemsByCategory[category]"
+                        :key="item.id"
+                        :class="[gradientFor(cidx, idx), 'aspect-square', 'rounded-lg', 'overflow-hidden', 'p-0']"
+                    >
+                        <div class="flex h-full flex-col">
+                            <!-- Image area fills most of the card; overlay text on top -->
+                            <div class="relative w-full flex-1 overflow-hidden">
                                 <img
+                                    v-if="item.image_path"
                                     :src="item.image_path"
                                     :alt="item.name"
-                                    class="h-full w-full object-cover"
+                                    class="absolute inset-0 h-full w-full object-cover"
                                     @error="() => console.error('Image failed to load:', item.image_path)"
                                 />
-                                {{ console.log('Image path:', item.image_path) }}
-                            </div>
 
-                            <div class="flex-1 p-4">
-                                <div class="flex items-start justify-between">
-                                    <div>
-                                        <h3 class="font-medium">{{ item.name }}</h3>
-                                        <p v-if="item.description" class="mt-1 text-sm text-muted-foreground">{{ item.description }}</p>
-                                        <!-- Options indicator -->
-                                        <div v-if="hasValidOptions(item)" class="mt-1 flex items-center">
-                                            <span class="rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-800">Customizable</span>
+                                <!-- zoom button removed from overlay; placed next to Add button below -->
+
+                                <!-- overlay gradient + content -->
+                                <div class="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/60 to-transparent p-3 text-white">
+                                    <div class="flex items-start justify-between">
+                                        <div>
+                                            <h3 class="text-sm leading-tight font-medium sm:text-base">{{ item.name }}</h3>
+                                            <p v-if="item.description" class="mt-1 line-clamp-2 text-xs text-white/90 sm:text-sm">
+                                                {{ item.description }}
+                                            </p>
+                                        </div>
+                                        <div v-if="hasValidOptions(item)" class="ml-2">
+                                            <span class="rounded-full bg-white/20 px-2 py-0.5 text-xs">Customizable</span>
                                         </div>
                                     </div>
-                                    <Button
-                                        size="icon"
-                                        variant="outline"
-                                        @click="addToCart(item)"
-                                        class="h-8 w-8 flex-shrink-0"
-                                        :title="hasValidOptions(item) ? 'Select options' : 'Add to cart'"
-                                    >
-                                        <Plus class="h-4 w-4" />
-                                    </Button>
+
+                                    <div class="mt-2 text-right">
+                                        <span class="text-sm font-semibold">{{ formatPrice(item.price) }}</span>
+                                    </div>
                                 </div>
-                                <p class="mt-2 font-medium text-yellow-500">{{ formatPrice(item.price) }}</p>
+                            </div>
+
+                            <!-- Cart + Zoom buttons below image -->
+                            <div class="flex justify-center gap-2 p-2">
+                                <Button
+                                    size="sm"
+                                    variant="default"
+                                    @click="addToCart(item)"
+                                    class="max-w-xs flex-1 border-white/10 bg-white/10 px-3 py-1 text-sm text-white hover:bg-white/20"
+                                    :title="hasValidOptions(item) ? 'Select options' : 'Add to cart'"
+                                >
+                                    <ShoppingCart class="mr-2 h-4 w-4" />
+                                    <span>Add</span>
+                                </Button>
+
+                                <button
+                                    v-if="item.image_path"
+                                    @click.stop="openImageModal(item.image_path)"
+                                    class="inline-flex items-center justify-center rounded-md border border-white/10 bg-white/5 px-3 py-1 text-sm text-white hover:bg-white/10"
+                                    :title="`Enlarge ${item.name}`"
+                                >
+                                    <ZoomIn class="h-4 w-4" />
+                                </button>
                             </div>
                         </div>
                     </Card>
@@ -295,6 +361,27 @@ const scrollToCategory = (category: string) => {
             :order-history="props.orderHistory"
         />
     </CustomerLayout>
+
+    <!-- Image modal -->
+    <div v-if="showImageModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/60" @click="closeImageModal"></div>
+        <div class="relative z-10 flex max-h-full max-w-full flex-col items-center">
+            <!-- clearer close button placed above the image -->
+            <div class="mb-3 flex w-full justify-end">
+                <button
+                    @click="closeImageModal"
+                    aria-label="Close image"
+                    class="inline-flex items-center justify-center rounded-full bg-white p-2 text-black shadow-md hover:bg-gray-100"
+                >
+                    <X class="h-4 w-4" />
+                </button>
+            </div>
+
+            <div class="rounded-md bg-transparent">
+                <img v-if="modalImageSrc" :src="modalImageSrc" class="max-h-[86vh] max-w-[96vw] rounded-md object-contain shadow-lg" />
+            </div>
+        </div>
+    </div>
 
     <!-- Option Selection Modal is now handled by the cart store and CustomerCart component -->
 </template>

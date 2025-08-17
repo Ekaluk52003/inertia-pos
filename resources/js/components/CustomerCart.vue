@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useCartStore } from '@/stores/cartStore';
 import { router, useForm, usePage } from '@inertiajs/vue3';
-import { ChevronDown, ChevronUp, Clock, Minus, Plus, ShoppingCart } from 'lucide-vue-next';
+import { ChevronDown, ChevronUp, Clock, Minus, Plus, ShoppingCart, Trash2 } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
 
 const page = usePage();
@@ -81,6 +81,24 @@ const calculateOrderTotal = (order: any): number => {
     return order.items.reduce((total: number, item: any) => {
         return total + calculateItemTotal(item);
     }, 0);
+};
+
+// Compute unit price for a cart item including selected options
+const cartItemUnitPrice = (cartItem: any): number => {
+    const base = Number(cartItem?.item?.price || 0);
+    let extras = 0;
+    if (cartItem && Array.isArray(cartItem.selectedOptions)) {
+        cartItem.selectedOptions.forEach((opt: any) => {
+            extras += Number(opt.additional_price || 0);
+        });
+    }
+    return base + extras;
+};
+
+// Compute total price for a cart item (unit price * quantity)
+const cartItemTotal = (cartItem: any): number => {
+    const qty = Number(cartItem?.quantity || 1);
+    return cartItemUnitPrice(cartItem) * qty;
 };
 
 // Set active order if provided in props
@@ -294,7 +312,7 @@ const submitOrder = () => {
                             <div
                                 v-for="(cartItem, index) in cartStore.cart"
                                 :key="index"
-                                class="flex items-start justify-between border-b border-yellow-200 pb-4"
+                                class="flex items-stretch justify-between border-b border-yellow-200 pb-4"
                             >
                                 <div>
                                     <h4 class="font-medium">{{ cartItem.item.name }}</h4>
@@ -310,17 +328,28 @@ const submitOrder = () => {
                                     <!-- Display notes if any -->
                                     <p v-if="cartItem.notes" class="mt-1 text-xs italic">"{{ cartItem.notes }}"</p>
                                     <div class="mt-2 flex items-center">
-                                        <Button size="icon" variant="outline" @click="cartStore.decrementQuantity(index)" class="h-6 w-6">
-                                            <Minus class="h-3 w-3" />
-                                        </Button>
-                                        <span class="mx-2">{{ cartItem.quantity }}</span>
-                                        <Button size="icon" variant="outline" @click="cartStore.incrementQuantity(index)" class="h-6 w-6">
-                                            <Plus class="h-3 w-3" />
-                                        </Button>
+                                        <div class="flex items-center">
+                                            <Button size="icon" variant="outline" @click="cartStore.decrementQuantity(index)" class="h-6 w-6">
+                                                <Minus class="h-3 w-3" />
+                                            </Button>
+                                            <span class="mx-2">{{ cartItem.quantity }}</span>
+                                            <Button size="icon" variant="outline" @click="cartStore.incrementQuantity(index)" class="h-6 w-6">
+                                                <Plus class="h-3 w-3" />
+                                            </Button>
+                                        </div>
                                     </div>
                                 </div>
-                                <div class="text-right">
-                                    <p class="font-medium">{{ cartStore.formatPrice(cartItem.item.price * cartItem.quantity) }}</p>
+                                <div class="flex flex-col items-end justify-between gap-2 text-right">
+                                    <p class="font-medium">{{ cartStore.formatPrice(cartItemTotal(cartItem)) }}</p>
+                                    <Button
+                                        size="icon"
+                                        variant="outline"
+                                        @click="cartStore.removeFromCart(index)"
+                                        class="h-6 w-6"
+                                        :title="'Remove item'"
+                                    >
+                                        <Trash2 class="h-3 w-3" />
+                                    </Button>
                                 </div>
                             </div>
                         </div>
