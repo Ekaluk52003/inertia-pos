@@ -16,9 +16,14 @@ class Payment extends Model
      */
     protected $fillable = [
         'order_id',
+        'table_number',
         'trans_ref',
         'amount',
         'sender_name',
+        'sender_display_name',
+        'sending_bank',
+        'restaurant_id',
+        'qr_code_id',
         'status',
         'payment_details',
     ];
@@ -39,5 +44,21 @@ class Payment extends Model
     public function order()
     {
         return $this->belongsTo(Order::class);
+    }
+
+    /**
+     * Get the restaurant that this payment belongs to.
+     */
+    public function restaurant()
+    {
+        return $this->belongsTo(Restaurant::class);
+    }
+
+    /**
+     * Get the QR code that was used for this payment.
+     */
+    public function qrCode()
+    {
+        return $this->belongsTo(QrCode::class);
     }
 }

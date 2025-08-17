@@ -1,26 +1,20 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 use App\Http\Controllers\BillController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\MenusController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PaymentController;
-use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublicController;
-
 use App\Http\Controllers\QrCodeController;
 use App\Http\Controllers\RestaurantController;
 use App\Http\Controllers\StaffController;
+use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
 
 Route::get('/', function () {
     return Inertia::render('Welcome');
 })->name('home');
-
-
-
-
 
 Route::get('dashboard', function () {
     return Inertia::render('Dashboard');
@@ -58,13 +52,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Restaurant-specific routes
     Route::prefix('restaurants/{restaurant}')->group(function () {
         // Menu routes
-    Route::get('menu', [MenusController::class, 'index'])->name('menu.index');
-    Route::get('menu/create', [MenusController::class, 'create'])->name('menu.create');
-    Route::post('menu', [MenusController::class, 'store'])->name('menu.store');
-    Route::get('menu/{menu}/edit', [MenusController::class, 'edit'])->name('menu.edit');
-    Route::put('menu/{menu}', [MenusController::class, 'update'])->name('menu.update');
-    Route::delete('menu/{menu}', [MenusController::class, 'destroy'])->name('menu.destroy');
-    Route::patch('menu/{menu}/toggle', [MenusController::class, 'toggleAvailability'])->name('menu.toggle');
+        Route::get('menu', [MenusController::class, 'index'])->name('menu.index');
+        Route::get('menu/create', [MenusController::class, 'create'])->name('menu.create');
+        Route::post('menu', [MenusController::class, 'store'])->name('menu.store');
+        Route::get('menu/{menu}/edit', [MenusController::class, 'edit'])->name('menu.edit');
+        Route::put('menu/{menu}', [MenusController::class, 'update'])->name('menu.update');
+        Route::delete('menu/{menu}', [MenusController::class, 'destroy'])->name('menu.destroy');
+        Route::patch('menu/{menu}/toggle', [MenusController::class, 'toggleAvailability'])->name('menu.toggle');
 
         // QR Code routes
         Route::get('qrcodes', [QrCodeController::class, 'index'])->name('qrcodes.index');
@@ -90,7 +84,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Payment routes
         Route::get('payments', [PaymentController::class, 'index'])->name('payments.index');
-        Route::get('payments/{payment}', [PaymentController::class, 'show'])->name('payments.show');
 
         // Staff routes
         Route::get('staff', [StaffController::class, 'index'])->name('staff.index');
@@ -98,17 +91,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('staff', [StaffController::class, 'store'])->name('staff.store');
         Route::delete('staff/{user}', [StaffController::class, 'destroy'])->name('staff.destroy');
     });
-});
-
-// Temporary debug route
-Route::get('/debug/menu-images', function () {
-    $menu = \App\Models\Menu::where('image_path', '!=', '')->first();
-    return [
-        'image_path' => $menu->image_path,
-        'storage_path' => storage_path('app/public/' . $menu->getRawOriginal('image_path')),
-        'public_path' => public_path('storage/' . $menu->getRawOriginal('image_path')),
-        'exists' => file_exists(storage_path('app/public/' . $menu->getRawOriginal('image_path'))),
-    ];
 });
 
 // Public routes for customers
@@ -131,4 +113,3 @@ Route::prefix('public')->group(function () {
 
 require __DIR__.'/settings.php';
 require __DIR__.'/auth.php';
-
