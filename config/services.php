@@ -3,7 +3,16 @@
 return [
 
     /*
-    |--------------------------------------------------------------------------
+    |--------    'slipok' => [
+        'api_key' => env('SLIPOK_API_KEY'),
+        'branch_id' => env('SLIPOK_BRANCH_ID'),
+        // If SLIPOK_OK_USE=false OR SLIPOK_DEV_MODE=true we simulate success
+        'dev_mode' => env('SLIPOK_DEV_MODE', ! env('SLIPOK_OK_USE', true)) || ! env('SLIPOK_OK_USE', true),
+        // Whether to verify SSL peer/host (set SLIPOK_VERIFY_SSL=false in local dev if you lack CA bundle)
+        'verify_ssl' => env('SLIPOK_VERIFY_SSL', true),
+        'cacert_path' => env('SLIPOK_CACERT_PATH'),
+        'ok_use' => env('SLIPOK_OK_USE', true),
+    ],---------------------------------------------------------
     | Third Party Services
     |--------------------------------------------------------------------------
     |
@@ -38,7 +47,11 @@ return [
     'slipok' => [
         'api_key' => env('SLIPOK_API_KEY'),
         'branch_id' => env('SLIPOK_BRANCH_ID'),
-        'dev_mode' => env('SLIPOK_DEV_MODE', true),
+        // If SLIPOK_OK_USE=false OR SLIPOK_DEV_MODE=true we simulate success
+        'dev_mode' => env('SLIPOK_DEV_MODE', ! env('SLIPOK_OK_USE', true)) || ! env('SLIPOK_OK_USE', true),
+        // Whether to verify SSL peer/host (set SLIPOK_VERIFY_SSL=false in local dev if you lack CA bundle)
+        'verify_ssl' => env('SLIPOK_VERIFY_SSL', true),
+        'ok_use' => env('SLIPOK_OK_USE', true),
     ],
 
 ];

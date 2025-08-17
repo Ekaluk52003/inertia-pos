@@ -56,6 +56,37 @@ const showPaymentQR = ref(false);
 // Quantity selected in the option modal
 const modalQuantity = ref(1);
 
+// Payment slip (base64) when pay-before is enabled
+const slipImageData = ref<string | null>(null);
+const slipFileName = ref<string>('');
+
+const handleSlipUpload = (e: Event) => {
+    const target = e.target as HTMLInputElement;
+    if (!target.files || target.files.length === 0) return;
+    const file = target.files[0];
+
+    // Basic size guard (e.g., 5MB)
+    const maxBytes = 5 * 1024 * 1024;
+    if (file.size > maxBytes) {
+        alert('File too large. Maximum size is 5MB.');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+        const result = reader.result as string;
+        // Keep full data URL so backend can detect image (data:image/...)
+        slipImageData.value = result;
+        slipFileName.value = file.name;
+    };
+    reader.readAsDataURL(file);
+};
+
+const removeSlip = () => {
+    slipImageData.value = null;
+    slipFileName.value = '';
+};
+
 // Calculate total price for an item including options
 const calculateItemTotal = (item: any): number => {
     let total = Number(item.price) * (item.quantity || 1);
@@ -159,27 +190,22 @@ const submitOrder = () => {
         return;
     }
 
-    // If payment is required and QR code is shown, confirm payment before proceeding
-    if (props.payBefore && showPaymentQR.value) {
-        if (!confirm('Please confirm that you have completed the payment. Click OK to proceed with your order.')) {
-            return;
-        }
-    }
+
 
     // Prepare order items
     const items = cartStore.prepareOrderItems();
 
     // Submit the form using named route
-    useForm({
+    const payload: any = {
         items,
         customer_notes: '',
-        ...(props.payBefore
-            ? {
-                  slip_image: null,
-                  qr_code_data: null,
-              }
-            : {}),
-    }).post(
+    };
+    if (props.payBefore) {
+        // Only send slip_image if provided (validation requires one of slip_image/qr_code_data)
+        if (slipImageData.value) payload.slip_image = slipImageData.value;
+    }
+
+    useForm(payload).post(
         route('public.order.store', {
             restaurantCode: props.restaurantId,
             tableCode: props.tableCode,
@@ -193,6 +219,7 @@ const submitOrder = () => {
 
                 // Reset payment QR code state
                 showPaymentQR.value = false;
+                removeSlip();
 
                 router.reload({ only: ['orderHistory'] });
 
@@ -201,14 +228,7 @@ const submitOrder = () => {
                     cartStore.setOrderHistory(props.orderHistory);
                 }
 
-                // Also update the cart store with the new order history when it arrives
-                // setTimeout(() => {
-                //     if (props.orderHistory && Array.isArray(props.orderHistory)) {
-                //         cartStore.setOrderHistory(props.orderHistory);
-                //     }
-                // }, 500);
-
-                // Switch to history tab after a short delay
+              
                 setTimeout(() => {
                     const historyTabButton = document.querySelector('[data-tab="history"]');
                     if (historyTabButton) {
@@ -451,17 +471,44 @@ const submitOrder = () => {
                         </div>
 
                         <!-- PromptPay QR Code (shown when payment is required) -->
-                        <div v-if="props.payBefore && showPaymentQR" class="my-4">
+                        <div v-if="props.payBefore && showPaymentQR" class="my-4 space-y-3">
                             <PromptPayQRCode :promptPayId="props.promptPayId" :amount="cartStore.cartTotal" :label="'Table ' + props.tableCode" />
-                            <p class="mt-2 text-sm text-gray-500">
-                                Please scan the QR code to pay. After payment, click the button below to complete your order.
-                            </p>
-                            <div class="mt-3 flex justify-end">
-                                <Button variant="outline" size="sm" @click="showPaymentQR = false"> Cancel Payment </Button>
+                            <p class="text-sm text-gray-500">Scan & pay, then upload your slip below before completing the order.</p>
+                            <div class="space-y-2">
+                                <label class="block text-sm font-medium">Upload Payment Slip</label>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    @change="handleSlipUpload"
+                                    class="w-full cursor-pointer rounded border p-2 text-sm"
+                                />
+                                <div v-if="slipImageData" class="flex items-center justify-between rounded border bg-white p-2 text-xs">
+                                    <span class="truncate">{{ slipFileName || 'Slip attached' }}</span>
+                                    <button type="button" class="text-red-500 hover:underline" @click="removeSlip">Remove</button>
+                                </div>
+                                <div v-if="errors.slip_image" class="text-xs text-red-500">{{ errors.slip_image }}</div>
+                            </div>
+                            <div class="flex justify-end">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    @click="
+                                        () => {
+                                            showPaymentQR = false;
+                                            removeSlip();
+                                        }
+                                    "
+                                >
+                                    Cancel Payment
+                                </Button>
                             </div>
                         </div>
 
-                        <Button class="mt-4 w-full" :disabled="cartStore.cart.length === 0" @click="submitOrder">
+                        <Button
+                            class="mt-4 w-full"
+                            :disabled="cartStore.cart.length === 0 || (props.payBefore && showPaymentQR && !slipImageData)"
+                            @click="submitOrder"
+                        >
                             <span v-if="processing" class="flex items-center">
                                 <svg
                                     class="mr-3 -ml-1 h-5 w-5 animate-spin text-white"

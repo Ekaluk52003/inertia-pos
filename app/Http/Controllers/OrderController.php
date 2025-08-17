@@ -2,24 +2,21 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\NewOrder;
 use App\Models\Order;
-use App\Models\Restaurant;
 use App\Models\Payment;
 use App\Models\QrCode;
-use App\Events\NewOrder;
+use App\Models\Restaurant;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Inertia\Inertia;
 use Illuminate\Support\Facades\Redirect;
-use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Str;
+use Inertia\Inertia;
 
 class OrderController extends Controller
 {
-    /**
-
-     */
     public function index(Restaurant $restaurant)
     {
         $this->authorize('viewAny', [Order::class, $restaurant]);
@@ -65,7 +62,6 @@ class OrderController extends Controller
         $orderItem = $order->orderItems()->findOrFail($validated['order_item_id']);
         $orderItem->update(['status' => $validated['status']]);
 
-        return;
     }
 
     /**
@@ -109,7 +105,7 @@ class OrderController extends Controller
                     }
 
                     return $orderArray;
-                })->values()
+                })->values(),
             ];
         })->values();
 
@@ -143,7 +139,7 @@ class OrderController extends Controller
             Log::info('Order request received:', [
                 'request_data' => $request->all(),
                 'restaurant_code' => $restaurantCode,
-                'table_code' => $tableCode
+                'table_code' => $tableCode,
             ]);
 
             $qrCode = QrCode::where('code', $tableCode)
@@ -157,7 +153,7 @@ class OrderController extends Controller
         } catch (\Exception $e) {
             Log::error('Error in initial setup:', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
             throw $e;
         }
@@ -169,7 +165,7 @@ class OrderController extends Controller
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.special_instructions' => 'nullable|string',
             'items.*.selected_options' => 'nullable|array',
-            'customer_notes' => 'nullable|string'
+            'customer_notes' => 'nullable|string',
         ];
 
         // Only require payment verification for restaurants with pay_before enabled
@@ -180,61 +176,88 @@ class OrderController extends Controller
 
         $validated = $request->validate($validationRules);
 
-        // Calculate total amount
+        // Calculate total amount (includes base price + all selected options)
         $totalAmount = 0;
         $orderItems = [];
 
         foreach ($validated['items'] as $item) {
             try {
-                Log::info('Processing menu item:', ['item' => $item]);
-
                 $menuItem = $restaurant->menuItems()->findOrFail($item['menu_id']);
-                Log::info('Found menu item:', ['menu_item' => $menuItem->toArray()]);
 
-                $totalAmount += $menuItem->price * $item['quantity'];
+                $quantity = (int) $item['quantity'];
+                $baseUnitPrice = (float) $menuItem->price;
 
-                // Calculate additional price from selected options
-                $optionsPrice = 0;
-                $selectedOptions = [];
+                // Securely recompute additional option price; do not trust client-sent aggregated price
+                $selectedOptionsInput = isset($item['selected_options']) && is_array($item['selected_options'])
+                    ? $item['selected_options']
+                    : [];
 
-                if (isset($item['selected_options']) && is_array($item['selected_options'])) {
-                    $selectedOptions = $item['selected_options'];
+                $computedAdditionalPerUnit = 0.0;
+                $normalizedSelectedOptions = [];
 
-                    // Calculate additional price from options if menu item has options defined
-                    if (!empty($menuItem->options) && is_array($menuItem->options)) {
-                        foreach ($menuItem->options as $optionGroup) {
-                            if (isset($optionGroup['values']) && is_array($optionGroup['values'])) {
-                                foreach ($optionGroup['values'] as $optionValue) {
-                                    // Check if this option is selected
-                                    $optionName = $optionValue['name'] ?? '';
-                                    if (in_array($optionName, array_column($selectedOptions, 'option_name'))) {
-                                        $optionsPrice += ($optionValue['price'] ?? 0);
+                if (! empty($selectedOptionsInput)) {
+                    // Index option groups by name for quick lookup
+                    $optionGroups = [];
+                    if (is_array($menuItem->options)) {
+                        foreach ($menuItem->options as $group) {
+                            if (isset($group['name'])) {
+                                $optionGroups[$group['name']] = $group;
+                            }
+                        }
+                    }
+
+                    foreach ($selectedOptionsInput as $selOpt) {
+                        $optionName = $selOpt['option_name'] ?? null;
+                        $choices = isset($selOpt['choices']) && is_array($selOpt['choices']) ? $selOpt['choices'] : [];
+                        if (! $optionName) {
+                            continue; // skip invalid
+                        }
+                        $group = $optionGroups[$optionName] ?? null;
+                        $additionalForThisOption = 0.0;
+                        if ($group) {
+                            // Support both 'values' and 'choices'
+                            $valueList = [];
+                            if (isset($group['values']) && is_array($group['values'])) {
+                                $valueList = $group['values'];
+                            } elseif (isset($group['choices']) && is_array($group['choices'])) {
+                                $valueList = $group['choices'];
+                            }
+                            foreach ($choices as $choiceName) {
+                                foreach ($valueList as $val) {
+                                    if (($val['name'] ?? null) === $choiceName) {
+                                        $additionalForThisOption += (float) ($val['price'] ?? 0);
+                                        break;
                                     }
                                 }
                             }
                         }
+                        $computedAdditionalPerUnit += $additionalForThisOption;
+                        $normalizedSelectedOptions[] = [
+                            'option_name' => $optionName,
+                            'choices' => $choices,
+                            'additional_price' => $additionalForThisOption, // recomputed, not trusted from client
+                        ];
                     }
                 }
 
-                // Calculate total item price including options
-                $itemPrice = $menuItem->price + $optionsPrice;
-                $totalAmount += ($itemPrice * $item['quantity']) - ($menuItem->price * $item['quantity']); // Add only the options price to total
+                $finalUnitPrice = $baseUnitPrice + $computedAdditionalPerUnit;
+                $lineTotal = $finalUnitPrice * $quantity;
+                $totalAmount += $lineTotal; // totalAmount includes all base prices + option prices
 
                 $orderItems[] = [
                     'menu_id' => $menuItem->id,
                     'name' => $menuItem->name,
-                    'quantity' => $item['quantity'],
-                    'price' => $itemPrice,
+                    'quantity' => $quantity,
+                    'price' => $finalUnitPrice, // store unit price including options
                     'status' => 'pending',
                     'special_instructions' => $item['special_instructions'] ?? null,
-                    'options' => $selectedOptions,
+                    'options' => $normalizedSelectedOptions,
                 ];
 
-                Log::info('Order item prepared:', ['order_item' => end($orderItems)]);
             } catch (\Exception $e) {
                 Log::error('Error processing menu item:', [
                     'item' => $item,
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
                 ]);
                 throw $e;
             }
@@ -248,70 +271,133 @@ class OrderController extends Controller
             // Only verify payment if payment data is provided
             if (isset($validated['slip_image']) || isset($validated['qr_code_data'])) {
                 try {
-                $paymentData = $validated['slip_image'] ?? $validated['qr_code_data'];
+                    $paymentData = $validated['slip_image'] ?? $validated['qr_code_data'];
 
-                // Call SlipOK API service for verification
-                $slipVerification = app(\App\Services\SlipOkService::class)->verifyPayment(
-                    $paymentData,
-                    $totalAmount
-                );
+                    // Check if we're in development mode
+                    $devMode = config('services.slipok.dev_mode', false);
+                    $okUse = config('services.slipok.ok_use', true);
 
-                // Check if payment has already been used
-                $existingPayment = Payment::where('trans_ref', $slipVerification['transRef'])->first();
-                if ($existingPayment) {
-                    $restaurant->load('menuItems');
+                    if ($devMode || ! $okUse) {
+                        Log::info('SLIPOK SIMULATION: Bypassing external API (dev mode or SLIPOK_OK_USE=false).');
 
-                    return Inertia::render('Customer', [
-                        'restaurant' => [
-                            'id' => $restaurant->id,
-                            'name' => $restaurant->name,
-                            'description' => $restaurant->description,
-                            'payBefore' => $restaurant->pay_before,
-                            'menuItems' => $restaurant->menuItems,
-                        ],
-                        'table' => [
-                            'number' => $qrCode->table_number,
-                            'code' => $tableCode
-                        ],
-                        'error' => 'This payment has already been used.',
-                        'menuItems' => $restaurant->menuItems,
-                        'categories' => $restaurant->menuItems->pluck('category')->unique()->values()->all(),
-                        'cart' => $validated['items']
+                        $slipVerification = [
+                            'transRef' => 'DEV_'.\Illuminate\Support\Str::uuid()->toString(),
+                            'amount' => $totalAmount,
+                            'sender' => [
+                                'name' => 'DEV MODE',
+                                'displayName' => 'Development Test',
+                            ],
+                            'sendingBank' => 'DEV BANK',
+                        ];
+                    } else {
+                        // Real SlipOK API call
+                        $apiKey = config('services.slipok.api_key');
+                        $branchId = config('services.slipok.branch_id');
+
+                        if (! $apiKey || ! $branchId) {
+                            throw new \Exception('SlipOK credentials not configured.');
+                        }
+
+                        $url = "https://api.slipok.com/api/line/apikey/{$branchId}";
+                        $response = null;
+
+                        if (filter_var($paymentData, FILTER_VALIDATE_URL)) {
+                            // Remote image URL
+                            $response = Http::withHeaders([
+                                'x-authorization' => $apiKey,
+                                'Content-Type' => 'application/json',
+                            ])->withOptions(['verify' => false]) // TODO: Remove in production - use proper SSL certificates
+                                ->post($url, [
+                                    'url' => $paymentData,
+                                    'log' => true,
+                                    'amount' => $totalAmount,
+                                ]);
+                        } elseif (str_starts_with($paymentData, 'data:image')) {
+                            // Base64 data URL image - convert to file
+                            $imageData = substr($paymentData, strpos($paymentData, ',') + 1);
+                            $binary = base64_decode($imageData);
+                            if ($binary === false) {
+                                throw new \Exception('Invalid base64 slip image data.');
+                            }
+                            $response = Http::withHeaders(['x-authorization' => $apiKey])
+                                ->withOptions(['verify' => false]) // TODO: Remove in production - use proper SSL certificates
+                                ->attach('files', $binary, 'slip.jpg')
+                                ->post($url, [
+                                    'log' => true,
+                                    'amount' => $totalAmount,
+                                ]);
+                        } else {
+                            // QR raw text data
+                            $response = Http::withHeaders([
+                                'x-authorization' => $apiKey,
+                                'Content-Type' => 'application/json',
+                            ])->withOptions(['verify' => false]) // TODO: Remove in production - use proper SSL certificates
+                                ->post($url, [
+                                    'data' => $paymentData,
+                                    'log' => true,
+                                    'amount' => $totalAmount,
+                                ]);
+                        }
+
+                        Log::info('SlipOK raw response', [
+                            'status' => $response ? $response->status() : null,
+                            'body' => $response ? $response->body() : null,
+                        ]);
+
+                        if (! $response || ! $response->successful()) {
+                            $body = $response ? $response->json() : [];
+                            $msg = $body['message'] ?? 'SlipOK request failed';
+                            $code = $body['code'] ?? 'UNKNOWN';
+                            throw new \Exception("SlipOK API Error ($code): $msg");
+                        }
+
+                        $json = $response->json();
+                        if (! ($json['success'] ?? false)) {
+                            $msg = $json['message'] ?? 'Slip verification failed';
+                            $code = $json['code'] ?? 'INVALID';
+                            throw new \Exception("SlipOK Verification Error ($code): $msg");
+                        }
+
+                        $slipVerification = $json['data'] ?? [];
+                        if (isset($slipVerification['amount']) && (float) $slipVerification['amount'] !== (float) $totalAmount) {
+                            throw new \Exception('Amount mismatch: slip shows '.$slipVerification['amount'].' expected '.$totalAmount);
+                        }
+                    }
+
+                    // Check if payment has already been used
+                    $existingPayment = Payment::where('trans_ref', $slipVerification['transRef'])->first();
+                    if ($existingPayment) {
+                        return redirect()->route('public.menu', [
+                            'restaurantCode' => $restaurantCode,
+                            'tableCode' => $tableCode,
+                        ])->withErrors([
+                            isset($validated['slip_image']) ? 'slip_image' : 'qr_code_data' => 'This payment has already been used.',
+                        ])->with([
+                            'cart' => $validated['items'],
+                        ]);
+                    }
+
+                    $paymentData = [
+                        'table_number' => $qrCode->table_number,
+                        'amount' => $totalAmount,
+                        'trans_ref' => $slipVerification['transRef'],
+                        'sender_name' => $slipVerification['sender']['name'] ?? null,
+                        'sender_display_name' => $slipVerification['sender']['displayName'] ?? null,
+                        'sending_bank' => $slipVerification['sendingBank'] ?? null,
+                        'restaurant_id' => $restaurant->id,
+                        'qr_code_id' => $qrCode->id,
+                    ];
+
+                    $isPaid = true;
+                } catch (\Exception $e) {
+                    return redirect()->route('public.menu', [
+                        'restaurantCode' => $restaurantCode,
+                        'tableCode' => $tableCode,
+                    ])->withErrors([
+                        isset($validated['slip_image']) ? 'slip_image' : 'qr_code_data' => 'Payment verification failed: '.$e->getMessage(),
+                    ])->with([
+                        'cart' => $validated['items'],
                     ]);
-                }
-
-                $paymentData = [
-                    'table_number' => $qrCode->table_number,
-                    'amount' => $totalAmount,
-                    'trans_ref' => $slipVerification['transRef'],
-                    'sender_name' => $slipVerification['sender']['name'] ?? null,
-                    'sender_display_name' => $slipVerification['sender']['displayName'] ?? null,
-                    'sending_bank' => $slipVerification['sendingBank'] ?? null,
-                    'restaurant_id' => $restaurant->id,
-                    'qr_code_id' => $qrCode->id,
-                ];
-
-                $isPaid = true;
-            } catch (\Exception $e) {
-                $restaurant->load('menuItems');
-
-                return Inertia::render('Customer', [
-                    'restaurant' => [
-                        'id' => $restaurant->id,
-                        'name' => $restaurant->name,
-                        'description' => $restaurant->description,
-                        'payBefore' => $restaurant->pay_before,
-                        'menuItems' => $restaurant->menuItems,
-                    ],
-                    'table' => [
-                        'number' => $qrCode->table_number,
-                        'code' => $tableCode
-                    ],
-                    'error' => 'Payment verification failed: ' . $e->getMessage(),
-                    'menuItems' => $restaurant->menuItems,
-                    'categories' => $restaurant->menuItems->pluck('category')->unique()->values()->all(),
-                    'cart' => $validated['items']
-                ]);
                 }
             }
         }
@@ -324,7 +410,7 @@ class OrderController extends Controller
                 'total_amount' => $totalAmount,
                 'is_paid' => $isPaid,
                 'customer_notes' => $validated['customer_notes'] ?? null,
-                'order_items' => $orderItems
+                'order_items' => $orderItems,
             ]);
 
             try {
@@ -346,7 +432,7 @@ class OrderController extends Controller
                 Log::error('Failed to create order:', [
                     'error' => $e->getMessage(),
                     'trace' => $e->getTraceAsString(),
-                    'order_data' => $orderData ?? null
+                    'order_data' => $orderData ?? null,
                 ]);
                 throw $e;
             }
@@ -370,26 +456,29 @@ class OrderController extends Controller
             // Load order relationships for the flash data
             $order->load('orderItems', 'payments');
 
-            // Redirect back to the menu page with a flash message
-            return Redirect::back()->with([
+            // Redirect to the public menu (cannot redirect back to POST-only route)
+            return redirect()->route('public.menu', [
+                'restaurantCode' => $restaurantCode,
+                'tableCode' => $tableCode,
+            ])->with([
                 'success' => 'Order created successfully',
                 'activeOrder' => $order,
-                'flash_order_created' => true
+                'flash_order_created' => true,
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Order creation failed:', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             // Redirect back to the menu page with error flash message
             return redirect()->route('public.menu', [
                 'restaurantCode' => $restaurantCode,
-                'tableCode' => $tableCode
+                'tableCode' => $tableCode,
             ])->with([
-                'error' => 'Failed to create order: ' . $e->getMessage(),
-                'cart' => $validated['items']
+                'error' => 'Failed to create order: '.$e->getMessage(),
+                'cart' => $validated['items'],
             ]);
         }
     }
@@ -407,11 +496,11 @@ class OrderController extends Controller
             'restaurant' => $order->restaurant,
             'table' => [
                 'number' => $order->table_number,
-                'code' => $orderCode
+                'code' => $orderCode,
             ],
             'activeOrder' => $order,
             'menuItems' => $order->restaurant->menuItems,
-            'categories' => $order->restaurant->menuItems->pluck('category')->unique()
+            'categories' => $order->restaurant->menuItems->pluck('category')->unique(),
         ]);
     }
 }
