@@ -26,6 +26,16 @@ class OrderController extends Controller
             ->orderBy('created_at', 'desc')
             ->paginate(15);
 
+        // Ensure frontend-friendly camelCase keys exist (orderItems) so Vue can read them as props
+        $orders->getCollection()->transform(function ($order) {
+            // If relation loaded, set a camelCase attribute for the serializer
+            if ($order->relationLoaded('orderItems')) {
+                $order->setAttribute('orderItems', $order->orderItems->toArray());
+            }
+
+            return $order;
+        });
+
         return Inertia::render('Order/Index', [
             'restaurant' => $restaurant,
             'orders' => $orders,
@@ -39,12 +49,53 @@ class OrderController extends Controller
     {
         $this->authorize('view', $order);
 
+        // Load relations we need for the view
         $order->load('orderItems.menuItem', 'payments');
 
-        return Inertia::render('Order/Show', [
+        // Build a normalized array so the frontend always receives predictable keys
+        $orderArray = $order->toArray();
+
+        // Normalize order_items -> orderItems (camelCase) if present
+        if (isset($orderArray['order_items'])) {
+            $orderArray['orderItems'] = $orderArray['order_items'];
+        } elseif ($order->relationLoaded('orderItems')) {
+            $orderArray['orderItems'] = $order->orderItems->toArray();
+        } else {
+            $orderArray['orderItems'] = [];
+        }
+
+        // Ensure payments key exists and is an array
+        if (isset($orderArray['payments']) && is_array($orderArray['payments'])) {
+            // already fine
+        } elseif ($order->relationLoaded('payments')) {
+            $orderArray['payments'] = $order->payments->toArray();
+        } else {
+            $orderArray['payments'] = [];
+        }
+
+        // Debug info for troubleshooting missing items
+        $debug = [
+            'order_id' => $order->id,
+            'order_code' => $order->code ?? null,
+            'orderItems_count' => is_array($orderArray['orderItems']) ? count($orderArray['orderItems']) : 0,
+            'payments_count' => is_array($orderArray['payments']) ? count($orderArray['payments']) : 0,
+            'sample_first_item' => isset($orderArray['orderItems'][0]) ? array_slice($orderArray['orderItems'][0], 0, 6) : null,
+        ];
+
+        // Log debug information (will appear in storage/logs/laravel.log)
+        Log::debug('OrderController@show debug', $debug);
+
+        $props = [
             'restaurant' => $restaurant,
-            'order' => $order,
-        ]);
+            'order' => $orderArray,
+        ];
+
+        // If the request includes ?debug=1 return debug payload to the frontend for quick inspection
+        if (request()->boolean('debug')) {
+            $props['debug'] = $debug;
+        }
+
+        return Inertia::render('Order/Show', $props);
     }
 
     /**
@@ -71,7 +122,33 @@ class OrderController extends Controller
     {
         $this->authorize('update', $order);
 
-        $order->update(['is_paid' => true]);
+        DB::transaction(function () use ($order, $restaurant) {
+            // mark order paid
+            $order->update(['is_paid' => true]);
+
+            // create a corresponding payment record; omit sender/trans_ref/sending_bank as requested
+            // generate a unique trans_ref (staff-created, non-qrcode) to avoid unique constraint collisions
+            $generatedTransRef = 'non-qrcode-'.Str::uuid()->toString();
+
+            Payment::create([
+                'order_id' => $order->id,
+                'table_number' => $order->table_number,
+                // mark as non-qrcode since this payment was created by staff action
+                'trans_ref' => $generatedTransRef,
+                'amount' => $order->total_amount,
+                'sender_name' => null,
+                'sender_display_name' => null,
+                'sending_bank' => null,
+                'restaurant_id' => $restaurant->id,
+                'qr_code_id' => null,
+                'status' => 'completed',
+                'payment_details' => null,
+            ]);
+        });
+
+        if (request()->wantsJson()) {
+            return response()->json(['message' => 'Order marked as paid.']);
+        }
 
         return back()->with('success', 'Order marked as paid.');
     }
@@ -394,6 +471,12 @@ class OrderController extends Controller
                 ];
 
                 $order = $restaurant->orders()->create($orderData);
+
+                // Persist order items (we built $orderItems earlier)
+                if (! empty($orderItems)) {
+                    // Ensure menu_id and options shapes are compatible with OrderItem fillable/casts
+                    $order->orderItems()->createMany($orderItems);
+                }
 
             } catch (\Exception $e) {
                 throw $e;

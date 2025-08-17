@@ -6,6 +6,7 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { formatDistanceToNow } from 'date-fns';
 import { ArrowLeft, ChefHat, CreditCard } from 'lucide-vue-next';
+import { ref } from 'vue';
 
 // Define props interface
 interface Props {
@@ -41,6 +42,11 @@ interface OrderItem {
         price: number;
         category: string;
     };
+    options?: Array<{
+        option_name: string;
+        choices: string[];
+        additional_price: number;
+    }>;
 }
 
 interface Payment {
@@ -92,22 +98,43 @@ const getStatusClass = (status: string) => {
     }
 };
 
-// Calculate order total
-const orderTotal = props.order.orderItems.reduce((total, item) => {
-    return total + item.price * item.quantity;
+// Calculate order total (guard when orderItems is undefined)
+// Calculate item total including selected options (unit * qty + options)
+const calculateItemTotal = (item: any): number => {
+    let total = Number(item.price || 0) * (item.quantity || 0);
+
+    if (item.options && Array.isArray(item.options)) {
+        item.options.forEach((opt: any) => {
+            if (opt.additional_price) {
+                total += Number(opt.additional_price) * (item.quantity || 0);
+            }
+        });
+    }
+
+    return total;
+};
+
+const orderTotal = (props.order.orderItems || []).reduce((total, item) => {
+    return total + calculateItemTotal(item);
 }, 0);
 
-// Calculate payments total
-const paymentsTotal = props.order.payments.reduce((total, payment) => {
-    return total + payment.amount;
+// Calculate payments total (guard when payments is undefined)
+const paymentsTotal = (props.order.payments || []).reduce((total, payment) => {
+    return total + (payment.amount || 0);
 }, 0);
 
 // Check if all items are served
-const allItemsServed = props.order.orderItems.every((item) => item.status === 'served');
+const allItemsServed = (props.order.orderItems || []).every((item) => item.status === 'served');
+
+// Track processing state for individual items and for the order
+const processingItems = ref<Record<string, boolean>>({});
+const processingOrder = ref(false);
 
 // Handle item status update
 const updateItemStatus = (itemId: number, currentStatus: string) => {
     const nextStatus = currentStatus === 'pending' ? 'cooking' : currentStatus === 'cooking' ? 'ready' : 'served';
+    const key = `${props.order.id}-${itemId}`;
+    processingItems.value[key] = true;
 
     router.patch(
         route('orders.update-item-status', {
@@ -117,6 +144,35 @@ const updateItemStatus = (itemId: number, currentStatus: string) => {
         {
             order_item_id: itemId,
             status: nextStatus,
+        },
+        {
+            preserveScroll: true,
+            showProgress: false,
+            onFinish: () => {
+                processingItems.value[key] = false;
+            },
+            onError: () => {
+                processingItems.value[key] = false;
+            },
+        },
+    );
+};
+
+// Mark the current order as paid without showing the Inertia progress bar
+const markAsPaid = () => {
+    processingOrder.value = true;
+    router.patch(
+        route('orders.mark-paid', { restaurant: props.restaurant.id, order: props.order.id }),
+        {},
+        {
+            preserveScroll: true,
+            showProgress: false,
+            onFinish: () => {
+                processingOrder.value = false;
+            },
+            onError: () => {
+                processingOrder.value = false;
+            },
         },
     );
 };
@@ -145,17 +201,14 @@ const updateItemStatus = (itemId: number, currentStatus: string) => {
                                 Kitchen View
                             </Button>
                         </Link>
-                        <Link
-                            v-if="!props.order.is_paid"
-                            :href="route('orders.mark-paid', { restaurant: props.restaurant.id, order: props.order.id })"
-                            method="patch"
-                            as="button"
-                        >
-                            <Button>
-                                <CreditCard class="mr-2 h-4 w-4" />
-                                Mark as Paid
-                            </Button>
-                        </Link>
+                        <Button v-if="!props.order.is_paid" @click="markAsPaid" :disabled="processingOrder === true">
+                            <svg v-if="processingOrder" class="mr-2 h-4 w-4 animate-spin" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                            </svg>
+                            <CreditCard class="mr-2 h-4 w-4" v-if="!processingOrder" />
+                            Mark as Paid
+                        </Button>
                     </div>
                 </div>
 
@@ -227,17 +280,31 @@ const updateItemStatus = (itemId: number, currentStatus: string) => {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    <TableRow v-for="item in props.order.orderItems" :key="item.id">
+                                    <TableRow v-for="item in props.order.orderItems || []" :key="item.id">
                                         <TableCell>
                                             <div>
                                                 <div class="font-medium">{{ item.name }}</div>
                                                 <div v-if="item.special_instructions" class="mt-1 text-xs text-gray-500 italic">
                                                     {{ item.special_instructions }}
                                                 </div>
+                                                <div v-if="item.options && item.options.length" class="mt-1 text-xs text-gray-500">
+                                                    <div v-for="opt in item.options" :key="opt.option_name" class="mt-1">
+                                                        <span class="font-medium">{{ opt.option_name }}:</span>
+                                                        <span class="ml-1">{{ (opt.choices || []).join(', ') }}</span>
+                                                        <span
+                                                            v-if="opt.additional_price && opt.additional_price > 0"
+                                                            class="ml-2 text-xs text-gray-400"
+                                                            >(+{{ formatPrice(opt.additional_price) }} each)</span
+                                                        >
+                                                    </div>
+                                                </div>
                                             </div>
                                         </TableCell>
                                         <TableCell>{{ item.quantity }}</TableCell>
-                                        <TableCell>{{ formatPrice(item.price * item.quantity) }}</TableCell>
+                                        <TableCell>
+                                            <div class="text-sm font-medium">{{ formatPrice(calculateItemTotal(item)) }}</div>
+                                            <div class="text-xs text-muted-foreground">{{ formatPrice(item.price) }} each</div>
+                                        </TableCell>
                                         <TableCell>
                                             <span class="rounded-full px-2 py-1 text-xs font-medium" :class="getStatusClass(item.status)">
                                                 {{ item.status }}
@@ -250,7 +317,24 @@ const updateItemStatus = (itemId: number, currentStatus: string) => {
                                                     @click="updateItemStatus(item.id, item.status)"
                                                     size="sm"
                                                     variant="outline"
+                                                    :disabled="processingItems[props.order.id + '-' + item.id] === true"
                                                 >
+                                                    <svg
+                                                        v-if="processingItems[props.order.id + '-' + item.id]"
+                                                        class="mr-2 h-4 w-4 animate-spin"
+                                                        viewBox="0 0 24 24"
+                                                    >
+                                                        <circle
+                                                            class="opacity-25"
+                                                            cx="12"
+                                                            cy="12"
+                                                            r="10"
+                                                            stroke="currentColor"
+                                                            stroke-width="4"
+                                                            fill="none"
+                                                        ></circle>
+                                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                                                    </svg>
                                                     {{
                                                         item.status === 'pending'
                                                             ? 'Start Cooking'
