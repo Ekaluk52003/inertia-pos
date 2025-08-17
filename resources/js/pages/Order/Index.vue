@@ -92,6 +92,12 @@ const getPaymentClass = (isPaid: boolean) => {
     return isPaid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
 };
 
+// Calculate item total including options (unit may already include options depending on server)
+const calculateItemTotal = (item: any): number => {
+    // The server stores `price` as the unit price including selected options. Use it directly.
+    return Number(item.price || 0) * (item.quantity || 0);
+};
+
 // Track processing state per order so we can show a spinner
 const processingOrders = ref<Record<number, boolean>>({});
 
@@ -117,9 +123,18 @@ const goToOrder = (order: Order) => {
 // Mark an order as paid without triggering the Inertia progress bar
 const markOrderPaid = (order: Order) => {
     processingOrders.value[order.id] = true;
+
+    // Compute amount including option prices (fallback to order.total_amount if items not present)
+    let amount = Number(order.total_amount || 0);
+    if (order.orderItems && Array.isArray(order.orderItems) && order.orderItems.length > 0) {
+        amount = order.orderItems.reduce((sum: number, it: any) => {
+            return sum + calculateItemTotal(it);
+        }, 0);
+    }
+
     router.patch(
         route('orders.mark-paid', { restaurant: props.restaurant.id, order: order.id }),
-        {},
+        { amount },
         {
             preserveScroll: true,
             showProgress: false,

@@ -87,20 +87,27 @@ const removeSlip = () => {
     slipFileName.value = '';
 };
 
-// Calculate total price for an item including options
+// Calculate total price for an item. Prefer the persisted `item.price` (it already includes option extras).
+// Fall back to computing from base price + options only when `item.price` is not present.
 const calculateItemTotal = (item: any): number => {
-    let total = Number(item.price) * (item.quantity || 1);
+    const qty = Number(item.quantity || 1);
 
-    // Add additional price from options if available
+    // If the item has a persisted price, use it directly (unit price already includes option extras).
+    if (item && item.price !== undefined && item.price !== null) {
+        return Number(item.price) * qty;
+    }
+
+    // Fallback: compute unit price from base price + option additional_price
+    let unit = Number(item.price ?? item.base_price ?? 0);
     if (item.options && Array.isArray(item.options)) {
         item.options.forEach((option: any) => {
             if (option.additional_price) {
-                total += Number(option.additional_price) * (item.quantity || 1);
+                unit += Number(option.additional_price || 0);
             }
         });
     }
 
-    return total;
+    return unit * qty;
 };
 
 // Calculate total price for an entire order including all items and their options
@@ -130,6 +137,33 @@ const cartItemUnitPrice = (cartItem: any): number => {
 const cartItemTotal = (cartItem: any): number => {
     const qty = Number(cartItem?.quantity || 1);
     return cartItemUnitPrice(cartItem) * qty;
+};
+
+// Determine the menu/base unit price to display for an order item (prefer menuItem.price or base_price).
+const unitPriceForOrderItem = (item: any, cartItem: any = null): number => {
+    // If backend attached menuItem with base price
+    if (item && item.menuItem && item.menuItem.price !== undefined) {
+        return Number(item.menuItem.price);
+    }
+
+    // If a base_price field exists on the order item
+    if (item && item.base_price !== undefined) {
+        return Number(item.base_price);
+    }
+
+    // If order item price includes options, try to subtract option extras to get base price
+    if (item && item.price !== undefined && item.options && Array.isArray(item.options) && item.options.length > 0) {
+        const extras = item.options.reduce((s: number, o: any) => s + Number(o.additional_price || 0), 0);
+        return Math.max(0, Number(item.price) - extras);
+    }
+
+    // Fallback to cart item's menu price if provided
+    if (cartItem && cartItem.item && cartItem.item.price !== undefined) {
+        return Number(cartItem.item.price);
+    }
+
+    // Last resort: use the persisted item.price
+    return Number(item?.price ?? 0);
 };
 
 // Set active order if provided in props
@@ -190,8 +224,6 @@ const submitOrder = () => {
         return;
     }
 
-
-
     // Prepare order items
     const items = cartStore.prepareOrderItems();
 
@@ -228,7 +260,6 @@ const submitOrder = () => {
                     cartStore.setOrderHistory(props.orderHistory);
                 }
 
-              
                 setTimeout(() => {
                     const historyTabButton = document.querySelector('[data-tab="history"]');
                     if (historyTabButton) {
@@ -335,14 +366,25 @@ const submitOrder = () => {
                                 class="flex items-stretch justify-between border-b border-yellow-200 pb-4"
                             >
                                 <div>
-                                    <h4 class="font-medium">{{ cartItem.item.name }}</h4>
-                                    <p class="text-sm text-muted-foreground">{{ cartStore.formatPrice(cartItem.item.price) }} each</p>
+                                    <div>
+                                        <h4 class="font-medium text-gray-900">{{ cartItem.item.name }}</h4>
+                                        <div class="mt-1 flex items-center gap-3 text-sm text-gray-700">
+                                            <span>{{ cartItem.quantity }}x</span>
+                                            <span class="text-sm text-muted-foreground">{{ cartStore.formatPrice(cartItem.item.price) }}</span>
+                                        </div>
+                                    </div>
                                     <!-- Display selected options -->
                                     <div v-if="cartItem.selectedOptions.length > 0" class="mt-1">
-                                        <div v-for="(option, optIdx) in cartItem.selectedOptions" :key="optIdx" class="text-xs text-muted-foreground">
+                                        <div
+                                            v-for="(option, optIdx) in cartItem.selectedOptions"
+                                            :key="optIdx"
+                                            class="flex items-center gap-2 text-xs text-gray-600"
+                                        >
                                             <span class="font-medium">{{ option.option_name }}:</span>
-                                            {{ option.choices.join(', ') }}
-                                            <span v-if="option.additional_price > 0"> (+{{ cartStore.formatPrice(option.additional_price) }}) </span>
+                                            <span class="text-sm text-gray-700 italic">{{ option.choices.join(', ') }}</span>
+                                            <span v-if="option.additional_price > 0" class="text-xs text-muted-foreground"
+                                                >(+{{ cartStore.formatPrice(option.additional_price) }})</span
+                                            >
                                         </div>
                                     </div>
                                     <!-- Display notes if any -->
@@ -413,12 +455,15 @@ const submitOrder = () => {
                                     class="flex items-start justify-between py-1"
                                 >
                                     <div class="flex flex-col">
-                                        <div class="flex items-center">
-                                            <span class="mr-2">{{ item.quantity || 1 }}x</span>
-                                            <span>{{ item.name }}</span>
+                                        <div>
+                                            <div class="font-medium text-gray-900">{{ item.name }}</div>
+                                            <div class="mt-1 flex items-center gap-3 text-sm text-gray-700">
+                                                <span>{{ item.quantity || 1 }}x</span>
+                                                <span class=" text-gray-600">({{ cartStore.formatPrice(unitPriceForOrderItem(item)) }})</span>
+                                            </div>
                                         </div>
                                         <!-- Display selected options if available -->
-                                        <div v-if="item.options && item.options.length > 0" class="mt-1 ml-5 text-xs text-gray-600">
+                                        <div v-if="item.options && item.options.length > 0" class="mt-1 text-xs text-gray-600">
                                             <div v-for="(option, optIdx) in item.options" :key="optIdx">
                                                 <span class="font-medium">{{ option.option_name }}:</span>
                                                 {{ option.choices?.join(', ') || option.option_name }}

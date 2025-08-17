@@ -129,13 +129,14 @@ class OrderController extends Controller
             // create a corresponding payment record; omit sender/trans_ref/sending_bank as requested
             // generate a unique trans_ref (staff-created, non-qrcode) to avoid unique constraint collisions
             $generatedTransRef = 'non-qrcode-'.Str::uuid()->toString();
+            $amount = request()->input('amount', $order->total_amount);
 
             Payment::create([
                 'order_id' => $order->id,
                 'table_number' => $order->table_number,
                 // mark as non-qrcode since this payment was created by staff action
                 'trans_ref' => $generatedTransRef,
-                'amount' => $order->total_amount,
+                'amount' => $amount,
                 'sender_name' => null,
                 'sender_display_name' => null,
                 'sending_bank' => null,
@@ -308,6 +309,18 @@ class OrderController extends Controller
 
                 $finalUnitPrice = $baseUnitPrice + $computedAdditionalPerUnit;
                 $lineTotal = $finalUnitPrice * $quantity;
+                // Debug: log per-item price calculation to help trace mismatches
+                Log::debug('OrderController@storeFromMenu price calc', [
+                    'menu_id' => $menuItem->id,
+                    'menu_name' => $menuItem->name ?? null,
+                    'base_unit_price' => $baseUnitPrice,
+                    'computed_additional_per_unit' => $computedAdditionalPerUnit,
+                    'final_unit_price' => $finalUnitPrice,
+                    'quantity' => $quantity,
+                    'line_total' => $lineTotal,
+                    'selected_options_input' => $selectedOptionsInput,
+                    'normalized_selected_options' => $normalizedSelectedOptions,
+                ]);
                 $totalAmount += $lineTotal; // totalAmount includes all base prices + option prices
 
                 $orderItems[] = [
@@ -461,6 +474,19 @@ class OrderController extends Controller
 
 
             try {
+                // Sanity check: recompute total from built orderItems and compare to $totalAmount
+                $computedFromItems = 0;
+                foreach ($orderItems as $oi) {
+                    $computedFromItems += ((float) ($oi['price'] ?? 0)) * ((int) ($oi['quantity'] ?? 1));
+                }
+                if (abs($computedFromItems - $totalAmount) > 0.001) {
+                    Log::warning('OrderController@storeFromMenu total mismatch', [
+                        'totalAmount' => $totalAmount,
+                        'computedFromItems' => $computedFromItems,
+                        'orderItems' => $orderItems,
+                    ]);
+                }
+
                 $orderData = [
                     'table_number' => $qrCode->table_number,
                     'code' => Str::uuid()->toString(),

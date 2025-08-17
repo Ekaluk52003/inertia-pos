@@ -100,18 +100,10 @@ const getStatusClass = (status: string) => {
 
 // Calculate order total (guard when orderItems is undefined)
 // Calculate item total including selected options (unit * qty + options)
+// Server persists OrderItem.price as unit price already including options.
+// Use that value directly to compute line totals to avoid double-counting option prices.
 const calculateItemTotal = (item: any): number => {
-    let total = Number(item.price || 0) * (item.quantity || 0);
-
-    if (item.options && Array.isArray(item.options)) {
-        item.options.forEach((opt: any) => {
-            if (opt.additional_price) {
-                total += Number(opt.additional_price) * (item.quantity || 0);
-            }
-        });
-    }
-
-    return total;
+    return Number(item.price || 0) * (item.quantity || 0);
 };
 
 const orderTotal = (props.order.orderItems || []).reduce((total, item) => {
@@ -161,9 +153,15 @@ const updateItemStatus = (itemId: number, currentStatus: string) => {
 // Mark the current order as paid without showing the Inertia progress bar
 const markAsPaid = () => {
     processingOrder.value = true;
+    // Compute amount including options
+    let amount = Number(props.order.total_amount || 0);
+    if (props.order.orderItems && Array.isArray(props.order.orderItems) && props.order.orderItems.length > 0) {
+        amount = props.order.orderItems.reduce((sum: number, it: any) => sum + calculateItemTotal(it), 0);
+    }
+
     router.patch(
         route('orders.mark-paid', { restaurant: props.restaurant.id, order: props.order.id }),
-        {},
+        { amount },
         {
             preserveScroll: true,
             showProgress: false,

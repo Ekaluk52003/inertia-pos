@@ -408,18 +408,11 @@ export const useCartStore = defineStore('cart', () => {
         if (!activeOrder.value || !activeOrder.value.items) return 0;
 
         return activeOrder.value.items.reduce((total, item) => {
-            // Base price * quantity
-            let itemTotal = Number(item.price) * (item.quantity || 1);
-
-            // Add additional price from options if available
-            if (item.options && Array.isArray(item.options)) {
-                item.options.forEach(option => {
-                    if (option.additional_price) {
-                        itemTotal += Number(option.additional_price) * (item.quantity || 1);
-                    }
-                });
-            }
-
+            // The server persists OrderItem.price as the unit price already including
+            // any selected option additional_price. Do not add option prices again here
+            // (would double-count). For active orders we therefore use price * qty only.
+            const qty = (item.quantity || 1);
+            const itemTotal = Number(item.price) * qty;
             return total + itemTotal;
         }, 0);
     };
