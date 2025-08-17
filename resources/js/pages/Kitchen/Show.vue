@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
-import { ArrowLeft } from 'lucide-vue-next';
+import { ArrowLeft, Bell, BellOff } from 'lucide-vue-next';
 import { ref } from 'vue';
 // Import the useEcho hook for private channels
 import { useEcho } from '@laravel/echo-vue';
@@ -82,6 +82,31 @@ const getStatusClass = (status: string) => {
     }
 };
 
+// Vibrant gradient palette for order items (similar to menu cards)
+const gradients = [
+    'bg-gradient-to-br from-yellow-300 to-pink-500 text-white',
+    'bg-gradient-to-br from-indigo-400 to-purple-600 text-white',
+    'bg-gradient-to-br from-emerald-300 to-green-600 text-white',
+    'bg-gradient-to-br from-rose-300 to-orange-400 text-white',
+    'bg-gradient-to-br from-sky-300 to-blue-600 text-white',
+];
+
+// Choose gradient based on item status so color represents status
+const gradientFor = (status: string) => {
+    switch (status) {
+        case 'pending':
+            return 'bg-gradient-to-br from-yellow-300 to-yellow-500 text-black';
+        case 'cooking':
+            return 'bg-gradient-to-br from-orange-300 to-orange-500 text-white';
+        case 'ready':
+            return 'bg-gradient-to-br from-emerald-300 to-green-600 text-white';
+        case 'served':
+            return 'bg-gradient-to-br from-sky-200 to-blue-400 text-white';
+        default:
+            return 'bg-gray-100 text-gray-800';
+    }
+};
+
 // Audio notification system
 const audioRef = ref<HTMLAudioElement | null>(null);
 const userInteracted = ref(false);
@@ -119,6 +144,26 @@ const enableNotifications = () => {
             .catch((error) => {
                 console.warn('Could not enable notifications:', error);
             });
+    }
+};
+
+// Toggle notifications on/off. When disabling, stop any playing audio.
+const toggleNotifications = () => {
+    if (notificationEnabled.value) {
+        // Disable notifications
+        notificationEnabled.value = false;
+        try {
+            if (audioRef.value) {
+                audioRef.value.pause();
+                audioRef.value.currentTime = 0;
+            }
+        } catch (e) {
+            console.warn('Error stopping audio when disabling notifications', e);
+        }
+        console.log('Notifications disabled');
+    } else {
+        // Enable (reuse enableNotifications to play test sound)
+        enableNotifications();
     }
 };
 
@@ -212,6 +257,12 @@ const getNextStatusText = (currentStatus: string) => {
             return 'Update';
     }
 };
+
+// Choose a high-contrast class for action buttons placed on gradient backgrounds
+const getActionButtonClass = (status: string) => {
+    // Use a white background + dark text to guarantee readability on vibrant gradients
+    return 'bg-white text-black shadow-sm';
+};
 </script>
 
 <template>
@@ -233,10 +284,16 @@ const getNextStatusText = (currentStatus: string) => {
                         <h1 class="ml-4 text-2xl font-semibold text-gray-900">Kitchen View</h1>
                     </div>
 
-                    <!-- Notification toggle button -->
-                    <Button @click="enableNotifications" variant="outline" :class="{ 'bg-yellow-100': notificationEnabled }">
-                        <span v-if="notificationEnabled">🔔 Notifications On</span>
-                        <span v-else>🔕 Enable Notifications</span>
+                    <!-- Notification toggle button (icon-only circular) -->
+                    <Button
+                        @click="toggleNotifications"
+                        :class="notificationEnabled ? 'bg-yellow-500 text-white hover:bg-gray-50' : 'border bg-white text-gray-700 hover:bg-gray-50'"
+                        class="flex h-10 w-10 items-center justify-center rounded-full"
+                        :title="notificationEnabled ? 'Disable notifications' : 'Enable notifications'"
+                        aria-label="Toggle notifications"
+                    >
+                        <Bell v-if="notificationEnabled" class="h-5 w-5" />
+                        <BellOff v-else class="h-5 w-5" />
                     </Button>
                 </div>
 
@@ -283,10 +340,10 @@ const getNextStatusText = (currentStatus: string) => {
 
                                                 <ul v-if="order.orderItems && order.orderItems.length > 0" class="space-y-3">
                                                     <li
-                                                        v-for="item in order.orderItems"
+                                                        v-for="(item, itemIndex) in order.orderItems"
                                                         :key="item.id"
                                                         class="rounded-md p-2"
-                                                        :class="getStatusClass(item.status)"
+                                                        :class="[gradientFor(item.status), 'shadow-sm']"
                                                     >
                                                         <div class="flex items-start justify-between">
                                                             <div>
@@ -315,6 +372,7 @@ const getNextStatusText = (currentStatus: string) => {
                                                                 size="sm"
                                                                 variant="outline"
                                                                 :disabled="isProcessing(order.id, item.id)"
+                                                                :class="getActionButtonClass(item.status)"
                                                             >
                                                                 <span v-if="isProcessing(order.id, item.id)" class="mr-1">⏳</span>
                                                                 {{ getNextStatusText(item.status) }}
@@ -358,10 +416,10 @@ const getNextStatusText = (currentStatus: string) => {
                                     <!-- Order items -->
                                     <ul v-if="order.orderItems && order.orderItems.length > 0" class="space-y-3">
                                         <li
-                                            v-for="item in order.orderItems"
+                                            v-for="(item, itemIndex) in order.orderItems"
                                             :key="item.id"
                                             class="rounded-md p-2"
-                                            :class="getStatusClass(item.status)"
+                                            :class="[gradientFor(item.status), 'shadow-sm']"
                                         >
                                             <div class="flex items-start justify-between">
                                                 <div>
@@ -385,6 +443,7 @@ const getNextStatusText = (currentStatus: string) => {
                                                     size="sm"
                                                     variant="outline"
                                                     :disabled="isProcessing(order.id, item.id)"
+                                                    :class="getActionButtonClass(item.status)"
                                                 >
                                                     <span v-if="isProcessing(order.id, item.id)" class="mr-1">⏳</span>
                                                     {{ getNextStatusText(item.status) }}
