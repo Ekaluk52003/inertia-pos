@@ -1,11 +1,11 @@
 <script setup lang="ts">
+import PromptPayQRCode from '@/components/PromptPayQRCode.vue';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useCartStore } from '@/stores/cartStore';
-import { useForm, usePage, router } from '@inertiajs/vue3';
+import { router, useForm, usePage } from '@inertiajs/vue3';
 import { ChevronDown, ChevronUp, Clock, Minus, Plus, ShoppingCart } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
-import PromptPayQRCode from '@/components/PromptPayQRCode.vue';
 
 const page = usePage();
 const processing = computed(() => page.props.processing);
@@ -53,11 +53,13 @@ const activeTab = ref('cart'); // 'cart' or 'history'
 
 // State to track if payment QR code should be shown
 const showPaymentQR = ref(false);
+// Quantity selected in the option modal
+const modalQuantity = ref(1);
 
 // Calculate total price for an item including options
 const calculateItemTotal = (item: any): number => {
     let total = Number(item.price) * (item.quantity || 1);
-    
+
     // Add additional price from options if available
     if (item.options && Array.isArray(item.options)) {
         item.options.forEach((option: any) => {
@@ -66,7 +68,7 @@ const calculateItemTotal = (item: any): number => {
             }
         });
     }
-    
+
     return total;
 };
 
@@ -75,7 +77,7 @@ const calculateOrderTotal = (order: any): number => {
     if (!order || !order.items || !Array.isArray(order.items)) {
         return Number(order?.total_amount || 0);
     }
-    
+
     return order.items.reduce((total: number, item: any) => {
         return total + calculateItemTotal(item);
     }, 0);
@@ -84,7 +86,7 @@ const calculateOrderTotal = (order: any): number => {
 // Set active order if provided in props
 if (props.activeOrder) {
     cartStore.setActiveOrder(props.activeOrder);
-    
+
     // If there are active order items, make sure the cart button shows the count
     if (props.activeOrder.items && props.activeOrder.items.length > 0) {
         // We don't automatically show the cart here to avoid disrupting user experience
@@ -101,7 +103,7 @@ if (props.orderHistory && Array.isArray(props.orderHistory)) {
 const requestBill = () => {
     // Call the route to request a bill
     useForm({
-        order_id: props.activeOrder?.id
+        order_id: props.activeOrder?.id,
     }).post(
         route('public.bill.request', {
             restaurantCode: props.restaurantId,
@@ -117,33 +119,35 @@ const requestBill = () => {
             onError: (errors) => {
                 console.error('Bill request errors:', errors);
             },
-        }
+        },
     );
 };
 
 // Method to submit the order
 const submitOrder = () => {
     console.log('promptPayId received:', props.promptPayId);
-    
+
     // If payment is required before ordering and QR code isn't shown yet, show it
     if (props.payBefore && !showPaymentQR.value) {
         // Check if the restaurant has a valid promptPayId configured
         if (!props.promptPayId || props.promptPayId.trim() === '') {
-            alert('This restaurant requires payment before ordering, but has not configured a valid payment method. Please contact the restaurant staff.');
+            alert(
+                'This restaurant requires payment before ordering, but has not configured a valid payment method. Please contact the restaurant staff.',
+            );
             return;
         }
-        
+
         showPaymentQR.value = true;
         return;
     }
-    
+
     // If payment is required and QR code is shown, confirm payment before proceeding
     if (props.payBefore && showPaymentQR.value) {
         if (!confirm('Please confirm that you have completed the payment. Click OK to proceed with your order.')) {
             return;
         }
     }
-    
+
     // Prepare order items
     const items = cartStore.prepareOrderItems();
 
@@ -168,24 +172,24 @@ const submitOrder = () => {
             onSuccess: () => {
                 // Clear the cart after successful order
                 cartStore.clearCart();
-                
+
                 // Reset payment QR code state
                 showPaymentQR.value = false;
-                
-                router.reload({ only: ['orderHistory'] })
-                
+
+                router.reload({ only: ['orderHistory'] });
+
                 // Make sure orderHistory exists and is an array before setting it
                 if (props.orderHistory && Array.isArray(props.orderHistory)) {
                     cartStore.setOrderHistory(props.orderHistory);
                 }
-                
+
                 // Also update the cart store with the new order history when it arrives
                 // setTimeout(() => {
                 //     if (props.orderHistory && Array.isArray(props.orderHistory)) {
                 //         cartStore.setOrderHistory(props.orderHistory);
                 //     }
                 // }, 500);
-                
+
                 // Switch to history tab after a short delay
                 setTimeout(() => {
                     const historyTabButton = document.querySelector('[data-tab="history"]');
@@ -195,7 +199,6 @@ const submitOrder = () => {
                 }, 300);
             },
 
-           
             onError: (errors: any) => {
                 console.error('Order submission errors:', errors);
             },
@@ -206,11 +209,11 @@ const submitOrder = () => {
 
 <template>
     <div class="fixed right-4 bottom-4 left-4 md:left-auto">
-        <Button 
-            @click="cartStore.toggleCart" 
-            class="w-full md:w-auto" 
+        <Button
+            @click="cartStore.toggleCart"
+            class="w-full md:w-auto"
             :variant="cartStore.totalItemCount > 0 ? 'default' : 'outline'"
-            :class="{'animate-pulse': cartStore.hasActiveOrderItems && !cartStore.showCart}"
+            :class="{ 'animate-pulse': cartStore.hasActiveOrderItems && !cartStore.showCart }"
         >
             <ShoppingCart class="mr-2 h-4 w-4" />
             <span v-if="cartStore.totalItemCount > 0">
@@ -226,22 +229,26 @@ const submitOrder = () => {
         </Button>
 
         <!-- Cart Panel -->
-        <Card v-if="cartStore.showCart" class="absolute right-0 bottom-full left-0 md:left-auto md:w-[400px] mt-2 mb-2 max-h-[70vh] overflow-y-auto z-30">
+        <Card
+            v-if="cartStore.showCart"
+            class="absolute right-0 bottom-full left-0 z-30 mt-2 mb-2 max-h-[70vh] overflow-y-auto md:left-auto md:w-[400px]"
+        >
             <CardHeader>
                 <CardTitle>Your Order</CardTitle>
                 <CardDescription>Table {{ props.tableCode }}</CardDescription>
-                
+
                 <!-- Tabs for Cart and Order History -->
                 <div class="mt-4 border-b">
                     <div class="flex">
-                        <button 
-                            @click="activeTab = 'cart'" 
+                        <button
+                            @click="activeTab = 'cart'"
                             data-tab="cart"
-                            class="px-4 py-2 -mb-px text-sm font-medium" 
+                            class="-mb-px px-4 py-2 text-sm font-medium"
                             :class="{
                                 'border-b-2 border-yellow-500 text-yellow-600': activeTab === 'cart',
-                                'text-gray-500 hover:text-gray-700': activeTab !== 'cart'
-                            }">
+                                'text-gray-500 hover:text-gray-700': activeTab !== 'cart',
+                            }"
+                        >
                             <div class="flex items-center">
                                 <ShoppingCart class="mr-2 h-4 w-4" />
                                 Cart
@@ -250,14 +257,15 @@ const submitOrder = () => {
                                 </span>
                             </div>
                         </button>
-                        <button 
-                            @click="activeTab = 'history'" 
+                        <button
+                            @click="activeTab = 'history'"
                             data-tab="history"
-                            class="px-4 py-2 -mb-px text-sm font-medium" 
+                            class="-mb-px px-4 py-2 text-sm font-medium"
                             :class="{
                                 'border-b-2 border-yellow-500 text-yellow-600': activeTab === 'history',
-                                'text-gray-500 hover:text-gray-700': activeTab !== 'history'
-                            }">
+                                'text-gray-500 hover:text-gray-700': activeTab !== 'history',
+                            }"
+                        >
                             <div class="flex items-center">
                                 <Clock class="mr-2 h-4 w-4" />
                                 Order History
@@ -274,16 +282,20 @@ const submitOrder = () => {
                     <div v-if="cartStore.cart.length === 0" class="py-8 text-center">
                         <p class="text-muted-foreground">Your cart is empty</p>
                     </div>
-                    
+
                     <!-- Cart Items Section -->
                     <div v-if="cartStore.cart.length > 0" class="rounded-lg bg-yellow-50 p-4">
-                        <div class="flex items-center justify-between mb-3">
+                        <div class="mb-3 flex items-center justify-between">
                             <h3 class="font-medium text-gray-800">New Items</h3>
-                            <span class="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">Not ordered yet</span>
+                            <span class="rounded-full bg-yellow-100 px-2 py-1 text-xs text-yellow-800">Not ordered yet</span>
                         </div>
 
                         <div class="space-y-4">
-                            <div v-for="(cartItem, index) in cartStore.cart" :key="index" class="flex items-start justify-between border-b border-yellow-200 pb-4">
+                            <div
+                                v-for="(cartItem, index) in cartStore.cart"
+                                :key="index"
+                                class="flex items-start justify-between border-b border-yellow-200 pb-4"
+                            >
                                 <div>
                                     <h4 class="font-medium">{{ cartItem.item.name }}</h4>
                                     <p class="text-sm text-muted-foreground">{{ cartStore.formatPrice(cartItem.item.price) }} each</p>
@@ -314,76 +326,84 @@ const submitOrder = () => {
                         </div>
                     </div>
                 </div>
-                
+
                 <!-- Order History Tab Content -->
                 <div v-if="activeTab === 'history'">
                     <!-- No Orders Message -->
                     <div v-if="!cartStore.hasOrderHistory && !cartStore.hasActiveOrderItems" class="py-8 text-center">
                         <p class="text-muted-foreground">No order history available</p>
                     </div>
-                    
-          
-                    
+
                     <!-- Order History Section -->
                     <div v-if="cartStore.hasOrderHistory || cartStore.hasActiveOrderItems" class="space-y-6">
-
-                        
                         <!-- Past Orders from History -->
-                        <div v-for="(order, orderIndex) in cartStore.orderHistory" :key="'order-'+orderIndex" class="rounded-lg bg-gray-50 border p-4 mb-4">
+                        <div
+                            v-for="(order, orderIndex) in cartStore.orderHistory"
+                            :key="'order-' + orderIndex"
+                            class="mb-4 rounded-lg border bg-gray-50 p-4"
+                        >
                             <!-- Order ID and Info -->
-                            <div class="mb-4 flex justify-between items-center">
+                            <div class="mb-4 flex items-center justify-between">
                                 <div>
                                     <h3 class="text-sm font-medium text-gray-500">ORD-{{ order.code || '000000' }}</h3>
-                                    <p class="text-xs text-gray-500 mt-1">{{ new Date(order.created_at).toLocaleString() }}</p>
+                                    <p class="mt-1 text-xs text-gray-500">{{ new Date(order.created_at).toLocaleString() }}</p>
                                 </div>
-                                <span class="text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full">
+                                <span class="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-800">
                                     {{ order.is_paid ? 'Paid' : 'Unpaid' }}
                                 </span>
                             </div>
-                            
+
                             <!-- Order Items -->
                             <div class="space-y-2">
-                                <div v-if="!order.items || order.items.length === 0" class="text-center py-2 text-gray-500 text-sm">
+                                <div v-if="!order.items || order.items.length === 0" class="py-2 text-center text-sm text-gray-500">
                                     No items in this order
                                 </div>
-                                <div v-for="(item, itemIndex) in order.items || []" :key="'item-'+orderIndex+'-'+itemIndex" class="flex justify-between items-start py-1">
-                                     <div class="flex flex-col">
-                                         <div class="flex items-center">
-                                             <span class="mr-2">{{ item.quantity || 1 }}x</span>
-                                             <span>{{ item.name }}</span>
-                                         </div>
-                                         <!-- Display selected options if available -->
-                                         <div v-if="item.options && item.options.length > 0" class="text-xs text-gray-600 ml-5 mt-1">
-                                             <div v-for="(option, optIdx) in item.options" :key="optIdx">
-                                                 <span class="font-medium">{{ option.option_name }}:</span>
-                                                 {{ option.choices?.join(', ') || option.option_name }}
-                                                 <span v-if="option.additional_price > 0"> (+{{ cartStore.formatPrice(option.additional_price) }})</span>
-                                             </div>
-                                         </div>
-                                         <div v-if="item.special_instructions" class="text-xs text-gray-500 italic ml-5 mt-1">
-                                             {{ item.special_instructions }}
-                                         </div>
-                                     </div>
-                                    
+                                <div
+                                    v-for="(item, itemIndex) in order.items || []"
+                                    :key="'item-' + orderIndex + '-' + itemIndex"
+                                    class="flex items-start justify-between py-1"
+                                >
+                                    <div class="flex flex-col">
+                                        <div class="flex items-center">
+                                            <span class="mr-2">{{ item.quantity || 1 }}x</span>
+                                            <span>{{ item.name }}</span>
+                                        </div>
+                                        <!-- Display selected options if available -->
+                                        <div v-if="item.options && item.options.length > 0" class="mt-1 ml-5 text-xs text-gray-600">
+                                            <div v-for="(option, optIdx) in item.options" :key="optIdx">
+                                                <span class="font-medium">{{ option.option_name }}:</span>
+                                                {{ option.choices?.join(', ') || option.option_name }}
+                                                <span v-if="option.additional_price > 0">
+                                                    (+{{ cartStore.formatPrice(option.additional_price) }})</span
+                                                >
+                                            </div>
+                                        </div>
+                                        <div v-if="item.special_instructions" class="mt-1 ml-5 text-xs text-gray-500 italic">
+                                            {{ item.special_instructions }}
+                                        </div>
+                                    </div>
+
                                     <div class="flex items-center">
                                         <span class="mr-2">
                                             {{ cartStore.formatPrice(calculateItemTotal(item)) }}
                                         </span>
-                                        <span class="rounded-full px-2 py-1 text-xs font-medium"
+                                        <span
+                                            class="rounded-full px-2 py-1 text-xs font-medium"
                                             :class="{
                                                 'bg-yellow-100 text-yellow-800': item.status === 'pending',
                                                 'bg-orange-100 text-orange-800': item.status === 'cooking',
                                                 'bg-green-100 text-green-800': item.status === 'ready',
-                                                'bg-gray-100 text-gray-800': item.status === 'served'
-                                            }">
+                                                'bg-gray-100 text-gray-800': item.status === 'served',
+                                            }"
+                                        >
                                             {{ item.status }}
                                         </span>
                                     </div>
                                 </div>
                             </div>
-                            
+
                             <!-- Order Total -->
-                            <div class="mt-4 pt-2 border-t border-gray-200 flex justify-between items-center">
+                            <div class="mt-4 flex items-center justify-between border-t border-gray-200 pt-2">
                                 <span class="font-medium">Total</span>
                                 <span class="font-medium">{{ cartStore.formatPrice(calculateOrderTotal(order)) }}</span>
                             </div>
@@ -400,28 +420,18 @@ const submitOrder = () => {
                             <span class="font-medium">Total</span>
                             <span class="font-medium">{{ cartStore.formatPrice(cartStore.cartTotal) }}</span>
                         </div>
-                        
+
                         <!-- PromptPay QR Code (shown when payment is required) -->
                         <div v-if="props.payBefore && showPaymentQR" class="my-4">
-                            <PromptPayQRCode 
-                                :promptPayId="props.promptPayId" 
-                                :amount="cartStore.cartTotal" 
-                                :label="'Table ' + props.tableCode"
-                            />
+                            <PromptPayQRCode :promptPayId="props.promptPayId" :amount="cartStore.cartTotal" :label="'Table ' + props.tableCode" />
                             <p class="mt-2 text-sm text-gray-500">
                                 Please scan the QR code to pay. After payment, click the button below to complete your order.
                             </p>
                             <div class="mt-3 flex justify-end">
-                                <Button 
-                                    variant="outline" 
-                                    size="sm" 
-                                    @click="showPaymentQR = false"
-                                >
-                                    Cancel Payment
-                                </Button>
+                                <Button variant="outline" size="sm" @click="showPaymentQR = false"> Cancel Payment </Button>
                             </div>
                         </div>
-                        
+
                         <Button class="mt-4 w-full" :disabled="cartStore.cart.length === 0" @click="submitOrder">
                             <span v-if="processing" class="flex items-center">
                                 <svg
@@ -442,7 +452,7 @@ const submitOrder = () => {
                             <span v-else>{{ props.payBefore ? (showPaymentQR ? 'Complete Order' : 'Pay') : 'Place Order' }}</span>
                         </Button>
                     </div>
-                    
+
                     <!-- Order History Tab Footer -->
                     <div v-if="activeTab === 'history' && cartStore.hasActiveOrderItems">
                         <div class="flex justify-between py-2">
@@ -451,7 +461,12 @@ const submitOrder = () => {
                         </div>
                         <Button class="mt-4 w-full bg-green-600 hover:bg-green-700" @click="requestBill">
                             <svg class="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    stroke-width="2"
+                                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                                ></path>
                             </svg>
                             Request Bill
                         </Button>
@@ -571,11 +586,33 @@ const submitOrder = () => {
                         placeholder="Any special requests?"
                     ></textarea>
                 </div>
+
+                <!-- Quantity selector -->
+                <div class="mt-4 flex items-center justify-between">
+                    <label class="text-sm font-medium">Quantity</label>
+                    <div class="flex items-center gap-2">
+                        <Button size="icon" variant="outline" @click="modalQuantity = Math.max(1, modalQuantity - 1)">
+                            <Minus class="h-3 w-3" />
+                        </Button>
+                        <span class="w-8 text-center">{{ modalQuantity }}</span>
+                        <Button size="icon" variant="outline" @click="modalQuantity++">
+                            <Plus class="h-3 w-3" />
+                        </Button>
+                    </div>
+                </div>
             </CardContent>
 
             <CardFooter class="flex justify-between">
                 <Button variant="outline" @click="cartStore.closeOptionModal">Cancel</Button>
-                <Button @click="cartStore.confirmAddToCart">Add to Cart</Button>
+                <Button
+                    @click="
+                        () => {
+                            cartStore.confirmAddToCart(modalQuantity);
+                            modalQuantity = 1;
+                        }
+                    "
+                    >Add to Cart</Button
+                >
             </CardFooter>
         </Card>
     </div>

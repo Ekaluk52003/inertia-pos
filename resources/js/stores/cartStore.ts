@@ -73,16 +73,16 @@ export const useCartStore = defineStore('cart', () => {
     // State
     const cart = ref<CartItem[]>([]);
     const showCart = ref(false);
-    
+
     // For option selection modal
     const showOptionModal = ref(false);
     const currentItem = ref<MenuItem | null>(null);
     const selectedOptions = ref<SelectedOption[]>([]);
     const itemNotes = ref('');
-    
+
     // Active order state
     const activeOrder = ref<ActiveOrder | null>(null);
-    
+
     // Order history state
     const orderHistory = ref<ActiveOrder[]>([]);
 
@@ -107,38 +107,38 @@ export const useCartStore = defineStore('cart', () => {
     const cartItemCount = computed(() => {
         return cart.value.reduce((count, item) => count + item.quantity, 0);
     });
-    
+
     // Total items count (cart + active order items)
     const totalItemCount = computed(() => {
         // Only count items in the cart, not active orders
         return cart.value.reduce((count, item) => count + item.quantity, 0);
     });
-    
+
     // Order status computed properties
     const pendingItems = computed(() => {
         if (!activeOrder.value || !activeOrder.value.items) return [];
         return activeOrder.value.items.filter(item => item.status === 'pending');
     });
-    
+
     const cookingItems = computed(() => {
         if (!activeOrder.value || !activeOrder.value.items) return [];
         return activeOrder.value.items.filter(item => item.status === 'cooking');
     });
-    
+
     const readyItems = computed(() => {
         if (!activeOrder.value || !activeOrder.value.items) return [];
         return activeOrder.value.items.filter(item => item.status === 'ready');
     });
-    
+
     const servedItems = computed(() => {
         if (!activeOrder.value || !activeOrder.value.items) return [];
         return activeOrder.value.items.filter(item => item.status === 'served');
     });
-    
+
     const hasActiveOrderItems = computed(() => {
         return activeOrder.value && activeOrder.value.items && activeOrder.value.items.length > 0;
     });
-    
+
     const hasOrderHistory = computed(() => {
         return orderHistory.value && orderHistory.value.length > 0;
     });
@@ -176,11 +176,11 @@ export const useCartStore = defineStore('cart', () => {
     const toggleCart = () => {
         showCart.value = !showCart.value;
     };
-    
+
     const openCart = () => {
         showCart.value = true;
     };
-    
+
     const closeCart = () => {
         showCart.value = false;
     };
@@ -249,7 +249,7 @@ export const useCartStore = defineStore('cart', () => {
             } else {
                 // For single-choice options, replace the existing choice
                 existingOption.choices = [choiceName];
-                
+
                 // Recalculate price - first find the old choice's price
                 let oldPrice = 0;
                 if (menuOption?.choices) {
@@ -259,7 +259,7 @@ export const useCartStore = defineStore('cart', () => {
                     const oldValue = menuOption.values.find((v) => v.name === existingOption.choices[0]);
                     oldPrice = oldValue?.price || 0;
                 }
-                
+
                 // Set the new price
                 existingOption.additional_price = price;
             }
@@ -318,7 +318,7 @@ export const useCartStore = defineStore('cart', () => {
         showCart.value = true;
     };
 
-    const confirmAddToCart = () => {
+    const confirmAddToCart = (quantity: number = 1) => {
         if (!currentItem.value) return;
 
         // Check if all required options are selected
@@ -366,13 +366,13 @@ export const useCartStore = defineStore('cart', () => {
         });
 
         if (existingItemIndex !== -1) {
-            // If the exact same item exists, increment its quantity
-            cart.value[existingItemIndex].quantity++;
+            // If the exact same item exists, increment its quantity by the requested amount
+            cart.value[existingItemIndex].quantity += quantity;
         } else {
-            // Otherwise, add it as a new item
+            // Otherwise, add it as a new item with specified quantity
             cart.value.push({
                 item: currentItem.value,
-                quantity: 1,
+                quantity: quantity,
                 notes: itemNotes.value,
                 selectedOptions: [...selectedOptions.value], // Create a copy of the array
             });
@@ -402,15 +402,15 @@ export const useCartStore = defineStore('cart', () => {
     const formatPrice = (price: number) => {
         return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB' }).format(price);
     };
-    
+
     // Calculate the total for all ordered items
     const getOrderTotal = (): number => {
         if (!activeOrder.value || !activeOrder.value.items) return 0;
-        
+
         return activeOrder.value.items.reduce((total, item) => {
             // Base price * quantity
             let itemTotal = Number(item.price) * (item.quantity || 1);
-            
+
             // Add additional price from options if available
             if (item.options && Array.isArray(item.options)) {
                 item.options.forEach(option => {
@@ -419,7 +419,7 @@ export const useCartStore = defineStore('cart', () => {
                     }
                 });
             }
-            
+
             return total + itemTotal;
         }, 0);
     };
@@ -441,21 +441,21 @@ export const useCartStore = defineStore('cart', () => {
         cart.value = [];
         showCart.value = false;
     };
-    
+
     // Active order methods
     const setActiveOrder = (order: ActiveOrder | null) => {
         activeOrder.value = order;
     };
-    
+
     const updateItemStatus = (itemId: number, status: 'pending' | 'cooking' | 'ready' | 'served') => {
         if (!activeOrder.value) return;
-        
+
         const item = activeOrder.value.items.find(item => item.id === itemId);
         if (item) {
             item.status = status;
         }
     };
-    
+
     const setOrderHistory = (orders: ActiveOrder[]) => {
         orderHistory.value = orders;
     };
