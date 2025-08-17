@@ -135,26 +135,15 @@ class OrderController extends Controller
     public function storeFromMenu(Request $request, $restaurantCode, $tableCode)
     {
         try {
-            // Debug incoming request
-            Log::info('Order request received:', [
-                'request_data' => $request->all(),
-                'restaurant_code' => $restaurantCode,
-                'table_code' => $tableCode,
-            ]);
 
             $qrCode = QrCode::where('code', $tableCode)
                 ->where('is_active', true)
                 ->firstOrFail();
 
-            Log::info('QR Code found:', ['qr_code' => $qrCode->toArray()]);
-
             $restaurant = $qrCode->restaurant;
-            Log::info('Restaurant found:', ['restaurant' => $restaurant->toArray()]);
+
         } catch (\Exception $e) {
-            Log::error('Error in initial setup:', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
+
             throw $e;
         }
 
@@ -364,19 +353,6 @@ class OrderController extends Controller
                         }
                     }
 
-                    // Check if payment has already been used
-                    $existingPayment = Payment::where('trans_ref', $slipVerification['transRef'])->first();
-                    if ($existingPayment) {
-                        return redirect()->route('public.menu', [
-                            'restaurantCode' => $restaurantCode,
-                            'tableCode' => $tableCode,
-                        ])->withErrors([
-                            isset($validated['slip_image']) ? 'slip_image' : 'qr_code_data' => 'This payment has already been used.',
-                        ])->with([
-                            'cart' => $validated['items'],
-                        ]);
-                    }
-
                     $paymentData = [
                         'table_number' => $qrCode->table_number,
                         'amount' => $totalAmount,
@@ -405,13 +381,7 @@ class OrderController extends Controller
         // Create the order and payment in a transaction
         DB::beginTransaction();
         try {
-            Log::info('Creating order with data:', [
-                'table_number' => $qrCode->table_number,
-                'total_amount' => $totalAmount,
-                'is_paid' => $isPaid,
-                'customer_notes' => $validated['customer_notes'] ?? null,
-                'order_items' => $orderItems,
-            ]);
+
 
             try {
                 $orderData = [
@@ -423,29 +393,16 @@ class OrderController extends Controller
                     'customer_notes' => $validated['customer_notes'] ?? null,
                 ];
 
-                Log::info('Attempting to create order with:', ['order_data' => $orderData]);
-
                 $order = $restaurant->orders()->create($orderData);
 
-                Log::info('Order created successfully:', ['order' => $order->toArray()]);
             } catch (\Exception $e) {
-                Log::error('Failed to create order:', [
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString(),
-                    'order_data' => $orderData ?? null,
-                ]);
                 throw $e;
             }
-
-            // Create order items
-            $createdItems = $order->orderItems()->createMany($orderItems);
-            Log::info('Order items created:', ['items' => $createdItems->toArray()]);
 
             // Create payment record if payment was verified
             if ($paymentData) {
                 $paymentData['order_id'] = $order->id;
                 $payment = Payment::create($paymentData);
-                Log::info('Payment record created:', ['payment' => $payment->toArray()]);
             }
 
             DB::commit();
@@ -467,10 +424,6 @@ class OrderController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Order creation failed:', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
 
             // Redirect back to the menu page with error flash message
             return redirect()->route('public.menu', [
