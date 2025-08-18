@@ -182,30 +182,6 @@ if (props.orderHistory && Array.isArray(props.orderHistory)) {
     cartStore.setOrderHistory(props.orderHistory);
 }
 
-// Method to request the bill
-const requestBill = () => {
-    // Call the route to request a bill
-    useForm({
-        order_id: props.activeOrder?.id,
-    }).post(
-        route('public.bill.request', {
-            restaurantCode: props.restaurantId,
-            tableCode: props.tableCode,
-        }),
-        {
-            preserveScroll: true,
-            preserveState: true,
-            onSuccess: () => {
-                // Show success message
-                alert('Bill requested successfully!');
-            },
-            onError: (errors) => {
-                console.error('Bill request errors:', errors);
-            },
-        },
-    );
-};
-
 // Method to submit the order
 const submitOrder = () => {
     console.log('promptPayId received:', props.promptPayId);
@@ -459,7 +435,7 @@ const submitOrder = () => {
                                             <div class="font-medium text-gray-900">{{ item.name }}</div>
                                             <div class="mt-1 flex items-center gap-3 text-sm text-gray-700">
                                                 <span>{{ item.quantity || 1 }}x</span>
-                                                <span class=" text-gray-600">({{ cartStore.formatPrice(unitPriceForOrderItem(item)) }})</span>
+                                                <span class="text-gray-600">({{ cartStore.formatPrice(unitPriceForOrderItem(item)) }})</span>
                                             </div>
                                         </div>
                                         <!-- Display selected options if available -->
@@ -580,18 +556,9 @@ const submitOrder = () => {
                             <span class="font-medium">Total for all orders:</span>
                             <span class="font-medium">{{ cartStore.formatPrice(cartStore.getOrderTotal()) }}</span>
                         </div>
-                        <Button class="mt-4 w-full bg-green-600 hover:bg-green-700" @click="requestBill">
-                            <svg class="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    stroke-width="2"
-                                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                                ></path>
-                            </svg>
-                            Request Bill
-                        </Button>
-                        {{ errors.slip_image }}
+                        <div class="mt-4 text-center text-sm text-muted-foreground">
+                            <p>Use the "Request Bill" button below the menu to get your invoice</p>
+                        </div>
                     </div>
                     <div v-if="errors.qr_code_data" class="mt-2 text-sm text-red-500">
                         {{ errors.qr_code_data }}

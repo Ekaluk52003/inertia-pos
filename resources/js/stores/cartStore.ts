@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
+import { router } from '@inertiajs/vue3';
 
 // Define interfaces
 interface MenuOption {
@@ -64,6 +65,7 @@ interface ActiveOrder {
     table_number: string;
     code: string;
     total_amount: number;
+    status: 'active' | 'billing' | 'billed' | 'completed';
     is_paid: boolean;
     items: OrderItemStatus[];
     created_at: string;
@@ -141,6 +143,44 @@ export const useCartStore = defineStore('cart', () => {
 
     const hasOrderHistory = computed(() => {
         return orderHistory.value && orderHistory.value.length > 0;
+    });
+
+    // Add computed properties for billing flow
+    const canRequestBill = computed(() => {
+        if (!activeOrder.value) return false;
+
+        // Can request bill when order is active and has items
+        return activeOrder.value.status === 'active' &&
+               activeOrder.value.items &&
+               activeOrder.value.items.length > 0;
+    });
+
+    const shouldShowBillButton = computed(() => {
+        if (!activeOrder.value) return false;
+        return activeOrder.value.status === 'active';
+    });
+
+    const shouldShowInvoice = computed(() => {
+        if (!activeOrder.value) return false;
+        return ['billing', 'billed', 'completed'].includes(activeOrder.value.status);
+    });
+
+    const shouldShowPaymentQR = computed(() => {
+        if (!activeOrder.value) return false;
+        return activeOrder.value.status === 'billing';
+    });
+
+    const shouldShowMenu = computed(() => {
+        if (!activeOrder.value) return true;
+        return activeOrder.value.status === 'active';
+    });
+
+    const isBillingRequested = computed(() => {
+        return activeOrder.value?.status === 'billing';
+    });
+
+    const isBilled = computed(() => {
+        return activeOrder.value?.status === 'billed';
     });
 
     // Helper function to check if an item has valid options with values
@@ -435,6 +475,32 @@ export const useCartStore = defineStore('cart', () => {
         showCart.value = false;
     };
 
+    // Add method to request bill
+    const requestBill = async () => {
+        if (!activeOrder.value || !canRequestBill.value) return;
+
+        try {
+            // Update local state immediately for UI responsiveness
+            const originalStatus = activeOrder.value.status;
+            activeOrder.value.status = 'billing';
+
+            // Make API call to update server
+            // Extract restaurant and table codes from current URL or route params
+            const currentPath = window.location.pathname;
+            const pathParts = currentPath.split('/');
+            const restaurantCode = pathParts[3]; // /public/menu/{restaurantCode}/{tableCode}
+            const tableCode = pathParts[4];
+
+            await router.post(`/public/order/${restaurantCode}/${tableCode}/request-bill`);
+        } catch (error) {
+            // Revert on error
+            if (activeOrder.value) {
+                activeOrder.value.status = 'active';
+            }
+            throw error;
+        }
+    };
+
     // Active order methods
     const setActiveOrder = (order: ActiveOrder | null) => {
         activeOrder.value = order;
@@ -470,6 +536,13 @@ export const useCartStore = defineStore('cart', () => {
         hasActiveOrderItems,
         hasOrderHistory,
         totalItemCount,
+        canRequestBill,
+        shouldShowBillButton,
+        shouldShowInvoice,
+        shouldShowPaymentQR,
+        shouldShowMenu,
+        isBillingRequested,
+        isBilled,
         toggleCart,
         openCart,
         closeCart,
@@ -486,6 +559,7 @@ export const useCartStore = defineStore('cart', () => {
         getOrderTotal,
         prepareOrderItems,
         clearCart,
+        requestBill,
         setActiveOrder,
         setOrderHistory,
         updateItemStatus

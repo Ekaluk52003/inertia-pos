@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import CustomerCart from '@/components/CustomerCart.vue';
+import CustomerInvoice from '@/components/CustomerInvoice.vue';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -118,6 +119,26 @@ interface MenuItemOption {
 // Local state
 const activeCategory = ref(props.categories[0] || '');
 
+// Set active order and order history in cart store
+if (props.activeOrder) {
+    cartStore.setActiveOrder(props.activeOrder);
+}
+
+if (props.orderHistory && Array.isArray(props.orderHistory)) {
+    cartStore.setOrderHistory(props.orderHistory);
+}
+
+// Watch for changes to activeOrder prop and update cart store
+watch(
+    () => props.activeOrder,
+    (newActiveOrder) => {
+        if (newActiveOrder) {
+            cartStore.setActiveOrder(newActiveOrder);
+        }
+    },
+    { deep: true },
+);
+
 // Helper function to check if an item has valid options with values
 const hasValidOptions = (item: MenuItem): boolean => {
     if (!item.options || !Array.isArray(item.options) || item.options.length === 0) {
@@ -163,6 +184,23 @@ const menuItemsByCategory = computed(() => {
 
     return result;
 });
+
+// Get button text based on payment method
+const getBillButtonText = () => {
+    if (!props.restaurant.payBefore) {
+        return 'Request Bill';
+    }
+    return 'Request Bill (Paid)';
+};
+
+// Handle bill request
+const handleRequestBill = async () => {
+    try {
+        await cartStore.requestBill();
+    } catch (error) {
+        console.error('Failed to request bill:', error);
+    }
+};
 
 // Methods
 const openOptionModal = (item: MenuItem) => {
@@ -258,7 +296,18 @@ const scrollToCategory = (category: string) => {
             </Alert>
         </div>
 
-        <div class="flex h-full flex-1 flex-col gap-4 overflow-x-auto p-4 pb-24 md:pb-4">
+        <!-- Invoice View (when bill is requested) -->
+        <div v-if="cartStore.shouldShowInvoice" class="flex h-full flex-1 flex-col p-4">
+            <CustomerInvoice
+                :restaurant="restaurant"
+                :table="table"
+                :active-order="cartStore.activeOrder"
+                :show-payment-qr="cartStore.shouldShowPaymentQR"
+            />
+        </div>
+
+        <!-- Menu View (when order is active) -->
+        <div v-if="cartStore.shouldShowMenu" class="flex h-full flex-1 flex-col gap-4 overflow-x-auto p-4 pb-24 md:pb-4">
             <!-- Restaurant Header -->
             <div class="py-4 text-center">
                 <h1 class="text-2xl font-bold">{{ restaurant.name }}</h1>
@@ -300,8 +349,6 @@ const scrollToCategory = (category: string) => {
                                     class="absolute inset-0 h-full w-full object-cover"
                                     @error="() => console.error('Image failed to load:', item.image_path)"
                                 />
-
-                                <!-- zoom button removed from overlay; placed next to Add button below -->
 
                                 <!-- overlay gradient + content -->
                                 <div class="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/60 to-transparent p-3 text-white">
@@ -349,10 +396,21 @@ const scrollToCategory = (category: string) => {
                     </Card>
                 </div>
             </div>
+
+            <!-- Request Bill Button -->
+            <div v-if="cartStore.shouldShowBillButton && cartStore.canRequestBill" class="fixed right-4 bottom-20 left-4 md:bottom-4">
+                <Button
+                    @click="handleRequestBill"
+                    class="w-full rounded-lg bg-yellow-400 px-6 py-3 font-semibold text-black shadow-lg hover:bg-yellow-500"
+                >
+                    {{ getBillButtonText() }}
+                </Button>
+            </div>
         </div>
 
-        <!-- Cart Component -->
+        <!-- Cart Component (only show when menu is active) -->
         <CustomerCart
+            v-if="cartStore.shouldShowMenu"
             :restaurant-id="props.restaurant.id"
             :table-code="props.table.code"
             :pay-before="props.restaurant.payBefore"

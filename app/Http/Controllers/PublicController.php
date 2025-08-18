@@ -55,6 +55,7 @@ class PublicController extends Controller
         $activeOrder = Order::where('restaurant_id', $restaurant->id)
             ->where('table_number', $qrCode->table_number)
             ->where('is_paid', false)
+            ->whereIn('status', ['active', 'billing', 'billed'])
             ->latest()
             ->first();
 

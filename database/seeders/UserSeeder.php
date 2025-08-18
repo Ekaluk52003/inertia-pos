@@ -14,28 +14,34 @@ class UserSeeder extends Seeder
     public function run(): void
     {
         // Create owner user
-        User::create([
-            'name' => 'Restaurant Owner',
-            'email' => 'owner@example.com',
-            'password' => Hash::make('password'),
-            'role' => 'owner',
-        ]);
+        User::firstOrCreate(
+            ['email' => 'owner@example.com'],
+            [
+                'name' => 'Restaurant Owner',
+                'password' => Hash::make('password'),
+                'role' => 'owner',
+            ]
+        );
 
         // Create staff users
-        User::create([
-            'name' => 'Kitchen Staff',
-            'email' => 'kitchen@example.com',
-            'password' => Hash::make('password'),
-            'role' => 'staff',
-            // restaurant_id will be set after restaurants are created
-        ]);
+        User::firstOrCreate(
+            ['email' => 'kitchen@example.com'],
+            [
+                'name' => 'Kitchen Staff',
+                'password' => Hash::make('password'),
+                'role' => 'staff',
+                // restaurant_id will be set after restaurants are created
+            ]
+        );
 
-        User::create([
-            'name' => 'Manager Staff',
-            'email' => 'manager@example.com',
-            'password' => Hash::make('password'),
-            'role' => 'staff',
-            // restaurant_id will be set after restaurants are created
-        ]);
+        User::firstOrCreate(
+            ['email' => 'manager@example.com'],
+            [
+                'name' => 'Manager Staff',
+                'password' => Hash::make('password'),
+                'role' => 'staff',
+                // restaurant_id will be set after restaurants are created
+            ]
+        );
     }
 }

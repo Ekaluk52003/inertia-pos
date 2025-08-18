@@ -74,6 +74,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('orders/{order}', [OrderController::class, 'show'])->name('orders.show');
         Route::patch('orders/{order}/item-status', [OrderController::class, 'updateItemStatus'])->name('orders.update-item-status');
         Route::patch('orders/{order}/mark-paid', [OrderController::class, 'markAsPaid'])->name('orders.mark-paid');
+        Route::post('orders/{order}/mark-billed', [OrderController::class, 'markBilled'])->name('orders.mark-billed');
         Route::get('kitchen', [OrderController::class, 'kitchenView'])->name('kitchen.show');
 
         // Bill routes
@@ -105,7 +106,7 @@ Route::prefix('public')->group(function () {
     Route::get('order/{orderCode}/status', [OrderController::class, 'getOrderStatus'])->name('public.order.status');
 
     // Bill request
-    Route::post('order/{orderCode}/bill', [BillController::class, 'requestBill'])->name('public.bill.request');
+    Route::post('order/{restaurantCode}/{tableCode}/request-bill', [OrderController::class, 'requestBill'])->name('public.order.request-bill');
 
     // Payment processing
     Route::post('order/{orderCode}/pay', [PaymentController::class, 'processPayment'])->name('public.payment.process');

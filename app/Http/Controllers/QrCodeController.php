@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreQrCodeRequest;
 use App\Models\QrCode;
 use App\Models\Restaurant;
 use Illuminate\Http\Request;
@@ -42,13 +43,11 @@ class QrCodeController extends Controller
     /**
      * Store a newly created QR code in storage.
      */
-    public function store(Request $request, Restaurant $restaurant)
+    public function store(StoreQrCodeRequest $request, Restaurant $restaurant)
     {
         $this->authorize('create', [QrCode::class, $restaurant]);
 
-        $validated = $request->validate([
-            'table_number' => 'required|string|min:1',
-        ]);
+        $validated = $request->validated();
 
         // Generate a unique code for the QR code
         $validated['code'] = Str::uuid()->toString();

@@ -472,7 +472,6 @@ class OrderController extends Controller
         DB::beginTransaction();
         try {
 
-
             try {
                 // Sanity check: recompute total from built orderItems and compare to $totalAmount
                 $computedFromItems = 0;
@@ -492,7 +491,7 @@ class OrderController extends Controller
                     'code' => Str::uuid()->toString(),
                     'total_amount' => $totalAmount,
                     'is_paid' => $isPaid,
-                    'status' => 'pending',
+                    'status' => 'active',
                     'customer_notes' => $validated['customer_notes'] ?? null,
                 ];
 
@@ -564,5 +563,78 @@ class OrderController extends Controller
             'menuItems' => $order->restaurant->menuItems,
             'categories' => $order->restaurant->menuItems->pluck('category')->unique(),
         ]);
+    }
+
+    /**
+     * Request bill for an order (customer-facing).
+     */
+    public function requestBill(Request $request, $restaurantCode, $tableCode)
+    {
+        try {
+            $qrCode = QrCode::where('code', $tableCode)
+                ->where('is_active', true)
+                ->firstOrFail();
+
+            $restaurant = $qrCode->restaurant;
+
+            // Verify the restaurant code matches
+            if ($restaurant->id != $restaurantCode) {
+                abort(404, 'Invalid restaurant code');
+            }
+
+            $order = $restaurant->orders()
+                ->where('table_number', $qrCode->table_number)
+                ->where('status', 'active')
+                ->latest()
+                ->first();
+
+            if (! $order) {
+                return redirect()->route('public.menu', [
+                    'restaurantCode' => $restaurantCode,
+                    'tableCode' => $tableCode,
+                ])->withErrors(['message' => 'No active order found.']);
+            }
+
+            if (! $order->orderItems()->exists()) {
+                return redirect()->route('public.menu', [
+                    'restaurantCode' => $restaurantCode,
+                    'tableCode' => $tableCode,
+                ])->withErrors(['message' => 'Cannot request bill for empty order.']);
+            }
+
+            $order->update(['status' => 'billing']);
+
+            // Broadcast event to restaurant staff
+            broadcast(new \App\Events\BillRequested($order));
+
+            // Redirect back to the menu with updated order data
+            return redirect()->route('public.menu', [
+                'restaurantCode' => $restaurantCode,
+                'tableCode' => $tableCode,
+            ])->with('success', 'Bill requested successfully.');
+
+        } catch (\Exception $e) {
+            return redirect()->route('public.menu', [
+                'restaurantCode' => $restaurantCode,
+                'tableCode' => $tableCode,
+            ])->withErrors(['message' => 'Failed to request bill: '.$e->getMessage()]);
+        }
+    }
+
+    /**
+     * Mark an order as billed (staff-facing).
+     */
+    public function markBilled(Restaurant $restaurant, Order $order)
+    {
+        $this->authorize('update', $order);
+
+        $order->update([
+            'status' => 'billed',
+            'is_paid' => true,
+        ]);
+
+        broadcast(new \App\Events\OrderBilled($order));
+
+        return back()->with('success', 'Order marked as billed.');
     }
 }
