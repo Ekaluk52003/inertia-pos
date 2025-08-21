@@ -31,6 +31,7 @@ interface Order {
     is_paid: boolean;
     items: OrderItem[];
     created_at: string;
+    status?: 'active' | 'billing' | 'billed' | 'completed';
 }
 
 // Props
@@ -56,35 +57,151 @@ const showPaymentQR = ref(false);
 // Quantity selected in the option modal
 const modalQuantity = ref(1);
 
-// Payment slip (base64) when pay-before is enabled
-const slipImageData = ref<string | null>(null);
+// Payment slip handling (file upload with progress & retry like CustomerInvoice)
 const slipFileName = ref<string>('');
+const slipStatus = ref<null | 'pending' | 'success' | 'error'>(null);
+const slipMessage = ref<string>('');
+const slipInputRef = ref<HTMLInputElement | null>(null);
+const slipForm = useForm({
+    slip_image: null as File | null,
+});
+const orderAutoSubmitted = ref(false);
 
-const handleSlipUpload = (e: Event) => {
-    const target = e.target as HTMLInputElement;
-    if (!target.files || target.files.length === 0) return;
-    const file = target.files[0];
+// Separate form used to immediately verify slip upon selection
+const slipVerifyForm = useForm({
+    slip_image: null as File | null,
+    amount: 0,
+});
 
-    // Basic size guard (e.g., 5MB)
-    const maxBytes = 5 * 1024 * 1024;
-    if (file.size > maxBytes) {
-        alert('File too large. Maximum size is 5MB.');
+// Order form (used to submit order and capture upload progress for slip)
+const orderForm = useForm({
+    items: [] as any[],
+    customer_notes: '',
+    slip_image: null as File | null,
+});
+
+const submitOrderInternal = () => {
+    if (orderAutoSubmitted.value) {
         return;
     }
+    const items = cartStore.prepareOrderItems();
+    orderForm.items = items;
+    orderForm.customer_notes = '';
+    orderForm.slip_image = slipForm.slip_image || null;
+    orderAutoSubmitted.value = true;
+    orderForm.post(route('public.order.store', { restaurantCode: props.restaurantId, tableCode: props.tableCode }), {
+        forceFormData: true,
+        preserveScroll: true,
+        preserveState: true,
+        onStart: () => {
+            slipMessage.value = slipMessage.value || 'Submitting order…';
+        },
+        onSuccess: (page: any) => {
+            cartStore.clearCart();
+            showPaymentQR.value = false;
+            removeSlip();
+            router.reload({ only: ['orderHistory'] });
+            if (props.orderHistory && Array.isArray(props.orderHistory)) {
+                const hist: any[] = props.orderHistory.map((o) => ({ ...o, status: o.status || (o.is_paid ? 'completed' : 'active') }));
+                cartStore.setOrderHistory(hist as any);
+            }
+            setTimeout(() => {
+                const historyTabButton = document.querySelector('[data-tab="history"]');
+                if (historyTabButton) {
+                    (historyTabButton as HTMLElement).click();
+                }
+            }, 300);
+        },
+        onError: (errors: any) => {
+            console.error('Auto order submission errors:', errors);
+            slipStatus.value = 'error';
+            const first = Object.values(errors)[0] as string | undefined;
+            slipMessage.value = first || 'Order submission failed';
+            orderAutoSubmitted.value = false; // allow retry via re-upload
+        },
+    });
+};
 
-    const reader = new FileReader();
-    reader.onload = () => {
-        const result = reader.result as string;
-        // Keep full data URL so backend can detect image (data:image/...)
-        slipImageData.value = result;
-        slipFileName.value = file.name;
-    };
-    reader.readAsDataURL(file);
+const handleSlipUpload = (e: Event) => {
+    const input = e.target as HTMLInputElement;
+    if (!input || !input.files || input.files.length === 0) {
+        return;
+    }
+    const file = input.files[0];
+    if (!file.type.startsWith('image/')) {
+        slipStatus.value = 'error';
+        slipMessage.value = 'Please select an image file.';
+        return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+        slipStatus.value = 'error';
+        slipMessage.value = 'Image too large (max 5MB).';
+        return;
+    }
+    slipFileName.value = file.name || '';
+    slipStatus.value = 'pending';
+    slipMessage.value = 'Verifying…';
+    // Keep original file in slipForm for later order submission reuse
+    slipForm.slip_image = file;
+    slipVerifyForm.slip_image = file;
+    slipVerifyForm.amount = cartStore.cartTotal;
+    slipVerifyForm.post(route('public.slip.verify'), {
+        forceFormData: true,
+        preserveScroll: true,
+        onError: (errors) => {
+            const first = Object.values(errors)[0] as string | undefined;
+            slipStatus.value = 'error';
+            slipMessage.value = first || 'Verification failed';
+        },
+        onSuccess: (page: any) => {
+            const flash = page.props?.flash || {};
+            const slipFlash = flash.slip_verification;
+            if (slipFlash && slipFlash.message) {
+                slipStatus.value = 'success';
+                slipMessage.value = slipFlash.message;
+            } else if (flash.success) {
+                slipStatus.value = 'success';
+                slipMessage.value = flash.success;
+            } else if (flash.slip_error) {
+                slipStatus.value = 'error';
+                slipMessage.value = flash.slip_error;
+            } else {
+                slipStatus.value = 'success';
+                slipMessage.value = 'Verified';
+            }
+            // Auto-submit order after successful verification (payBefore path only)
+            if (props.payBefore && slipStatus.value === 'success' && !orderAutoSubmitted.value) {
+                submitOrderInternal();
+            }
+        },
+        onFinish: () => {
+            if (input) {
+                input.value = '';
+            }
+        },
+    });
+};
+
+const retrySlip = () => {
+    if (slipInputRef.value) {
+        slipInputRef.value.value = '';
+        slipStatus.value = null;
+        slipMessage.value = '';
+        slipFileName.value = '';
+        slipForm.slip_image = null;
+        slipInputRef.value.click();
+    }
 };
 
 const removeSlip = () => {
-    slipImageData.value = null;
+    if (slipInputRef.value) {
+        slipInputRef.value.value = '';
+    }
+    slipStatus.value = null;
+    slipMessage.value = '';
     slipFileName.value = '';
+    slipForm.slip_image = null;
+    slipVerifyForm.slip_image = null;
 };
 
 // Calculate total price for an item. Prefer the persisted `item.price` (it already includes option extras).
@@ -168,7 +285,9 @@ const unitPriceForOrderItem = (item: any, cartItem: any = null): number => {
 
 // Set active order if provided in props
 if (props.activeOrder) {
-    cartStore.setActiveOrder(props.activeOrder);
+    const ao: any = { ...props.activeOrder };
+    if (!ao.status) ao.status = ao.is_paid ? 'completed' : 'active';
+    cartStore.setActiveOrder(ao);
 
     // If there are active order items, make sure the cart button shows the count
     if (props.activeOrder.items && props.activeOrder.items.length > 0) {
@@ -179,7 +298,8 @@ if (props.activeOrder) {
 
 // Set order history if provided in props
 if (props.orderHistory && Array.isArray(props.orderHistory)) {
-    cartStore.setOrderHistory(props.orderHistory);
+    const hist: any[] = props.orderHistory.map((o) => ({ ...o, status: o.status || (o.is_paid ? 'completed' : 'active') }));
+    cartStore.setOrderHistory(hist as any);
 }
 
 // Method to submit the order
@@ -199,56 +319,8 @@ const submitOrder = () => {
         showPaymentQR.value = true;
         return;
     }
-
-    // Prepare order items
-    const items = cartStore.prepareOrderItems();
-
-    // Submit the form using named route
-    const payload: any = {
-        items,
-        customer_notes: '',
-    };
-    if (props.payBefore) {
-        // Only send slip_image if provided (validation requires one of slip_image/qr_code_data)
-        if (slipImageData.value) payload.slip_image = slipImageData.value;
-    }
-
-    useForm(payload).post(
-        route('public.order.store', {
-            restaurantCode: props.restaurantId,
-            tableCode: props.tableCode,
-        }),
-        {
-            preserveScroll: true,
-            preserveState: true,
-            onSuccess: () => {
-                // Clear the cart after successful order
-                cartStore.clearCart();
-
-                // Reset payment QR code state
-                showPaymentQR.value = false;
-                removeSlip();
-
-                router.reload({ only: ['orderHistory'] });
-
-                // Make sure orderHistory exists and is an array before setting it
-                if (props.orderHistory && Array.isArray(props.orderHistory)) {
-                    cartStore.setOrderHistory(props.orderHistory);
-                }
-
-                setTimeout(() => {
-                    const historyTabButton = document.querySelector('[data-tab="history"]');
-                    if (historyTabButton) {
-                        (historyTabButton as HTMLElement).click();
-                    }
-                }, 300);
-            },
-
-            onError: (errors: any) => {
-                console.error('Order submission errors:', errors);
-            },
-        },
-    );
+    // Non pay-before or fallback manual trigger
+    submitOrderInternal();
 };
 </script>
 
@@ -281,7 +353,7 @@ const submitOrder = () => {
                 variant="default"
                 class="h-12 w-full rounded-lg bg-yellow-400 text-black shadow-lg hover:bg-yellow-500 md:h-10 md:w-10 md:rounded-full"
                 @click.stop="cartStore.requestBill()"
-                :title="cartStore.restaurant && cartStore.restaurant.payBefore ? 'Request Bill (Paid)' : 'Request Bill'"
+                :title="props.payBefore ? 'Request Bill (Paid)' : 'Request Bill'"
             >
                 <!-- Use a simple ₿ style bill icon via text for compactness; keep it accessible -->
                 <span class="sr-only">Request Bill</span>
@@ -516,14 +588,52 @@ const submitOrder = () => {
                             <div class="space-y-2">
                                 <label class="block text-sm font-medium">Upload Payment Slip</label>
                                 <input
+                                    ref="slipInputRef"
                                     type="file"
                                     accept="image/*"
                                     @change="handleSlipUpload"
-                                    class="w-full cursor-pointer rounded border p-2 text-sm"
+                                    :disabled="slipStatus === 'pending'"
+                                    class="w-full cursor-pointer rounded border p-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
                                 />
-                                <div v-if="slipImageData" class="flex items-center justify-between rounded border bg-white p-2 text-xs">
-                                    <span class="truncate">{{ slipFileName || 'Slip attached' }}</span>
+                                <div
+                                    v-if="slipFileName && slipStatus !== 'error'"
+                                    class="flex items-center justify-between rounded border bg-white p-2 text-xs"
+                                >
+                                    <span class="truncate">{{ slipFileName }}</span>
                                     <button type="button" class="text-red-500 hover:underline" @click="removeSlip">Remove</button>
+                                </div>
+                                <!-- Pending -->
+                                <div v-if="slipStatus === 'pending'" class="rounded border bg-white p-2 text-xs text-gray-700">
+                                    <div>Verifying: {{ slipFileName }}</div>
+                                    <div v-if="slipVerifyForm.progress" class="mt-2">
+                                        <div class="h-2 w-full overflow-hidden rounded bg-gray-200">
+                                            <div
+                                                class="h-full bg-blue-500 transition-all"
+                                                :style="{ width: (slipVerifyForm.progress.percentage || 0) + '%' }"
+                                            ></div>
+                                        </div>
+                                        <div class="mt-1 text-right text-[10px] tracking-wide text-gray-500">
+                                            {{ slipVerifyForm.progress.percentage }}%
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Success (handled after order, minimal here) -->
+                                <div v-if="slipStatus === 'success'" class="rounded border bg-green-50 p-2 text-xs text-green-700">
+                                    {{ slipMessage || 'Slip attached' }}
+                                </div>
+                                <!-- Error with retry -->
+                                <div
+                                    v-if="slipStatus === 'error'"
+                                    class="flex items-start justify-between gap-2 rounded border bg-red-50 p-2 text-xs text-red-700"
+                                >
+                                    <div class="flex-1">{{ slipMessage || 'Upload failed' }}</div>
+                                    <button
+                                        type="button"
+                                        @click="retrySlip"
+                                        class="inline-flex items-center rounded bg-red-600 px-2 py-0.5 text-[10px] font-medium text-white hover:bg-red-700"
+                                    >
+                                        Retry
+                                    </button>
                                 </div>
                                 <div v-if="errors.slip_image" class="text-xs text-red-500">{{ errors.slip_image }}</div>
                             </div>
@@ -544,8 +654,9 @@ const submitOrder = () => {
                         </div>
 
                         <Button
+                            v-if="!props.payBefore || (props.payBefore && !showPaymentQR)"
                             class="mt-4 w-full"
-                            :disabled="cartStore.cart.length === 0 || (props.payBefore && showPaymentQR && !slipImageData)"
+                            :disabled="cartStore.cart.length === 0 || slipStatus === 'pending'"
                             @click="submitOrder"
                         >
                             <span v-if="processing" class="flex items-center">
@@ -564,7 +675,7 @@ const submitOrder = () => {
                                 </svg>
                                 Processing...
                             </span>
-                            <span v-else>{{ props.payBefore ? (showPaymentQR ? 'Complete Order' : 'Pay') : 'Place Order' }}</span>
+                            <span v-else>{{ props.payBefore ? 'Pay' : 'Place Order' }}</span>
                         </Button>
                     </div>
 
