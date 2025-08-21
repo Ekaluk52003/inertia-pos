@@ -33,6 +33,7 @@ const emit = defineEmits<{
 const slipFileName = ref<string>('');
 const slipStatus = ref<null | 'pending' | 'success' | 'error'>(null);
 const slipMessage = ref<string>('');
+const slipInputRef = ref<HTMLInputElement | null>(null);
 
 // Inertia form for slip verification (uses FormData automatically when file present)
 const slipForm = useForm({
@@ -105,6 +106,16 @@ const handleSlipUpload = (e: Event) => {
             }
         },
     });
+};
+
+const retrySlip = () => {
+    if (slipInputRef.value) {
+        slipInputRef.value.value = '';
+        slipStatus.value = null;
+        slipMessage.value = '';
+        // trigger native file selector
+        slipInputRef.value.click();
+    }
 };
 
 const cartStore = useCartStore();
@@ -345,20 +356,41 @@ const orderTotal = (ord: any): number => {
                         <div class="mt-6 text-left">
                             <label class="block text-sm font-medium">Upload Payment Slip</label>
                             <input
+                                ref="slipInputRef"
                                 type="file"
                                 accept="image/*"
-                                class="mt-2 w-full cursor-pointer rounded border p-2 text-sm"
+                                class="mt-2 w-full cursor-pointer rounded border p-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="slipStatus === 'pending'"
                                 @change="handleSlipUpload"
                             />
 
                             <div v-if="slipStatus === 'pending'" class="mt-3 rounded border bg-white p-2 text-xs text-gray-700">
-                                Verifying slip: {{ slipFileName }}
+                                <div>Verifying slip: {{ slipFileName }}</div>
+                                <div v-if="slipForm.progress" class="mt-2">
+                                    <div class="h-2 w-full overflow-hidden rounded bg-gray-200">
+                                        <div
+                                            class="h-full bg-blue-500 transition-all"
+                                            :style="{ width: (slipForm.progress.percentage || 0) + '%' }"
+                                        ></div>
+                                    </div>
+                                    <div class="mt-1 text-right text-[10px] tracking-wide text-gray-500">{{ slipForm.progress.percentage }}%</div>
+                                </div>
                             </div>
                             <div v-else-if="slipStatus === 'success'" class="mt-3 rounded border bg-green-50 p-2 text-xs text-green-700">
                                 Verified: {{ slipMessage }}
                             </div>
-                            <div v-else-if="slipStatus === 'error'" class="mt-3 rounded border bg-red-50 p-2 text-xs text-red-700">
-                                Verification failed: {{ slipMessage }}
+                            <div
+                                v-else-if="slipStatus === 'error'"
+                                class="mt-3 flex items-start justify-between gap-2 rounded border bg-red-50 p-2 text-xs text-red-700"
+                            >
+                                <div class="flex-1">Verification failed: {{ slipMessage }}</div>
+                                <button
+                                    type="button"
+                                    @click="retrySlip"
+                                    class="inline-flex items-center rounded bg-red-600 px-2 py-0.5 text-[10px] font-medium text-white hover:bg-red-700"
+                                >
+                                    Retry
+                                </button>
                             </div>
                         </div>
                     </div>

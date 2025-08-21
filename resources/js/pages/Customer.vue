@@ -240,59 +240,7 @@ const formatPrice = (price: number) => {
     return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB' }).format(price);
 };
 
-// Handle slip upload emitted from CustomerInvoice component
-const handleSlipUploadEmit = async (payload: { slip: string; fileName?: string }) => {
-    try {
-        // Build request payload expected by server
-        const body = {
-            slip_image: payload.slip,
-            file_name: payload.fileName || null,
-        };
 
-        // Read CSRF token if present
-        const tokenMeta = document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null;
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (tokenMeta && tokenMeta.content) {
-            headers['X-CSRF-TOKEN'] = tokenMeta.content;
-        }
-
-        const res = await window.fetch('/public/slip/verify', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(body),
-            credentials: 'same-origin',
-        });
-
-        // Try to parse JSON response; if not JSON, throw with text
-        const text = await res.text();
-        let data: any = null;
-        try {
-            data = text ? JSON.parse(text) : null;
-        } catch (e) {
-            throw new Error(text || `Unexpected response from server: ${res.status}`);
-        }
-
-        if (!res.ok) {
-            const msg = data?.message || data?.error || JSON.stringify(data) || `Request failed: ${res.status}`;
-            // emit a flash or console error
-            console.error('Slip verification failed:', msg);
-            // show a flash via Inertia props if possible
-            // @ts-ignore
-            if ((window as any).Inertia) {
-                // no-op: server side flash handling will surface on redirect; here we console.log
-            }
-            return;
-        }
-
-        // Success - server should return JSON with verification result
-        console.log('Slip verification response:', data);
-
-        // Optionally, you may want to refresh the page props or update cartStore
-        // For now, show success in console and rely on existing flashes from server
-    } catch (err: any) {
-        console.error('Error uploading slip', err?.message ?? err);
-    }
-};
 
 // Color gradients to use for cards. We keep a short palette and pick by index so cards are colorful.
 const gradients = [
@@ -369,7 +317,6 @@ const scrollToCategory = (category: string) => {
                 :table="table"
                 :active-order="cartStore.activeOrder"
                 :show-payment-qr="cartStore.shouldShowPaymentQR || isBilling"
-                @slip-upload="handleSlipUploadEmit"
             />
         </div>
 
