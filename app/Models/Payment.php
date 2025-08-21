@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 
 class Payment extends Model
 {
@@ -15,7 +16,6 @@ class Payment extends Model
      * @var array<int, string>
      */
     protected $fillable = [
-        'order_id',
         'table_number',
         'trans_ref',
         'amount',
@@ -43,7 +43,20 @@ class Payment extends Model
      */
     public function order()
     {
-        return $this->belongsTo(Order::class);
+        // Dynamic relation: if payments table still has order_id, use it.
+        // Otherwise fall back to matching by table_number when possible so code
+        // that expects an order relation keeps working without throwing.
+        if (Schema::hasColumn($this->getTable(), 'order_id')) {
+            return $this->belongsTo(Order::class, 'order_id');
+        }
+
+        if (Schema::hasColumn($this->getTable(), 'table_number')) {
+            // Match orders by table_number (payments.table_number => orders.table_number)
+            return $this->belongsTo(Order::class, 'table_number', 'table_number');
+        }
+
+        // Last-resort: return a belongsTo relation that will never match.
+        return $this->belongsTo(Order::class, 'order_id');
     }
 
     /**

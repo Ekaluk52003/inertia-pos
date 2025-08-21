@@ -13,10 +13,6 @@ class OrderPolicy extends BasePolicy
 
     /**
      * Determine whether the user can view any orders.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Restaurant  $restaurant
-     * @return bool
      */
     public function viewAny(User $user, Restaurant $restaurant): bool
     {
@@ -25,10 +21,6 @@ class OrderPolicy extends BasePolicy
 
     /**
      * Determine whether the user can view the order.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Order  $order
-     * @return bool
      */
     public function view(User $user, Order $order): bool
     {
@@ -37,10 +29,6 @@ class OrderPolicy extends BasePolicy
 
     /**
      * Determine whether the user can update the order.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Order  $order
-     * @return bool
      */
     public function update(User $user, Order $order): bool
     {
@@ -49,10 +37,6 @@ class OrderPolicy extends BasePolicy
 
     /**
      * Determine whether the user can update the status of order items.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Order  $order
-     * @return bool
      */
     public function updateItemStatus(User $user, Order $order): bool
     {
@@ -61,10 +45,6 @@ class OrderPolicy extends BasePolicy
 
     /**
      * Determine whether the user can mark the order as paid.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Order  $order
-     * @return bool
      */
     public function markAsPaid(User $user, Order $order): bool
     {
@@ -73,10 +53,6 @@ class OrderPolicy extends BasePolicy
 
     /**
      * Determine whether the user can view the kitchen display for the restaurant.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Restaurant  $restaurant
-     * @return bool
      */
     public function viewKitchen(User $user, Restaurant $restaurant): bool
     {
@@ -84,7 +60,7 @@ class OrderPolicy extends BasePolicy
         // if ($user->isOwner()) {
         //     return true;
         // }
-        
+
         // Staff can only view kitchen for their assigned restaurant
         return $this->isStaff($user, $restaurant);
     }

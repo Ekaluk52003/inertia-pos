@@ -16,7 +16,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             // Original seeder
             EventSeeder::class,
-            
+
             // Eattinee seeders
             UserSeeder::class,
             RestaurantSeeder::class,

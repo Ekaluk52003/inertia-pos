@@ -31,7 +31,7 @@ class StoreQrCodeRequest extends FormRequest
                 // Check that no active QR code exists with this table number for this restaurant
                 Rule::unique('qr_codes', 'table_number')
                     ->where('restaurant_id', $restaurantId)
-                    ->where('is_active', true)
+                    ->where('is_active', true),
             ],
         ];
     }

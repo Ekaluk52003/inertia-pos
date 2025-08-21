@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreQrCodeRequest;
 use App\Models\QrCode;
 use App\Models\Restaurant;
-use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 
@@ -80,7 +79,7 @@ class QrCodeController extends Controller
         $this->authorize('update', $qrCode);
 
         $qrCode->update([
-            'is_active' => !$qrCode->is_active,
+            'is_active' => ! $qrCode->is_active,
         ]);
 
         return redirect()->route('qrcodes.index', $restaurant)

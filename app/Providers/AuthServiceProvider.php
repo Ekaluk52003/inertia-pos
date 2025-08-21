@@ -15,7 +15,6 @@ use App\Policies\PaymentPolicy;
 use App\Policies\QrCodePolicy;
 use App\Policies\RestaurantPolicy;
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
-use Illuminate\Support\Facades\Gate;
 
 class AuthServiceProvider extends ServiceProvider
 {

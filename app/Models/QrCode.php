@@ -19,6 +19,7 @@ class QrCode extends Model
         'table_number',
         'code',
         'is_active',
+        'status',
     ];
 
     /**

@@ -44,15 +44,7 @@ interface Payment {
     table_number: string;
     restaurant_id: number;
     qr_code_id: number;
-    order_id: number;
     created_at: string;
-    order: {
-        id: number;
-        code: string;
-        table_number: string;
-        total_amount: number;
-        status: string;
-    };
 }
 
 const props = defineProps<Props>();
@@ -248,11 +240,9 @@ const showPagination = computed(() => {
                                         <TableRow>
                                             <TableHead>Transaction Ref</TableHead>
                                             <TableHead>Table</TableHead>
-                                            <TableHead>Order</TableHead>
                                             <TableHead>Amount</TableHead>
                                             <TableHead>Sender</TableHead>
                                             <TableHead>Bank</TableHead>
-                                            <TableHead>Order Status</TableHead>
                                             <TableHead>Date</TableHead>
                                         </TableRow>
                                     </TableHeader>
@@ -264,16 +254,11 @@ const showPagination = computed(() => {
                                                 </div>
                                             </TableCell>
                                             <TableCell>
-                                                <Badge variant="outline"> Table {{ payment.table_number }} </Badge>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Link
-                                                    :href="route('orders.show', [props.restaurant.id, payment.order.id])"
-                                                    class="font-medium text-blue-600 hover:text-blue-800"
-                                                >
-                                                    #{{ payment.order.code.slice(0, 8) }}
+                                                <Link :href="route('orders.table.show', [props.restaurant.id, payment.table_number])">
+                                                    <Badge variant="outline"> Table {{ payment.table_number }} </Badge>
                                                 </Link>
                                             </TableCell>
+
                                             <TableCell>
                                                 <span class="font-semibold text-green-600">
                                                     {{ formatPrice(payment.amount) }}
@@ -295,11 +280,7 @@ const showPagination = computed(() => {
                                             <TableCell>
                                                 <span class="text-sm">{{ getBankName(payment.sending_bank) }}</span>
                                             </TableCell>
-                                            <TableCell>
-                                                <Badge :class="getStatusClass(payment.order.status)">
-                                                    {{ payment.order.status }}
-                                                </Badge>
-                                            </TableCell>
+
                                             <TableCell>
                                                 <div class="flex flex-col">
                                                     <span class="text-sm">{{ formatDate(payment.created_at) }}</span>

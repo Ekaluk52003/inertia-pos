@@ -22,6 +22,10 @@ interface Props {
         is_paid: boolean;
         status: string;
         created_at: string;
+        qr_code?: {
+            id?: number;
+            status?: string;
+        };
         orderItems: OrderItem[];
         payments: Payment[];
     };
@@ -56,6 +60,37 @@ interface Payment {
     amount: number;
     sender_name: string;
     created_at: string;
+}
+
+interface TableOrder {
+    id: number;
+    code: string;
+    total_amount: number;
+    status: string;
+    created_at: string;
+}
+
+interface Props {
+    restaurant: {
+        id: number;
+        name: string;
+    };
+    order: {
+        id: number;
+        table_number: string;
+        code: string;
+        total_amount: number;
+        is_paid: boolean;
+        status: string;
+        created_at: string;
+        qr_code?: {
+            id?: number;
+            status?: string;
+        };
+        orderItems: OrderItem[];
+        payments: Payment[];
+    };
+    tableOrders?: TableOrder[];
 }
 
 const props = defineProps<Props>();
@@ -97,6 +132,25 @@ const getStatusClass = (status: string) => {
             return 'bg-gray-100 text-gray-800';
     }
 };
+
+// Map table/qr status to badge classes
+const getTableStatusClass = (status: string | undefined) => {
+    switch (status) {
+        case 'active':
+            return 'bg-yellow-100 text-yellow-800';
+        case 'billing':
+            return 'bg-orange-100 text-orange-800';
+        case 'billed':
+            return 'bg-green-100 text-green-800';
+        case 'checked':
+            return 'bg-gray-100 text-gray-800';
+        default:
+            return 'bg-gray-100 text-gray-800';
+    }
+};
+
+// Determine the table status from the order's qr_code
+const tableStatus = props.order.qr_code?.status ?? 'unknown';
 
 // Calculate order total (guard when orderItems is undefined)
 // Calculate item total including selected options (unit * qty + options)
@@ -230,6 +284,12 @@ const markAsPaid = () => {
                                     </span>
                                 </div>
                                 <div class="flex items-center justify-between">
+                                    <span class="text-sm font-medium">Table Status:</span>
+                                    <span class="rounded-full px-2 py-1 text-xs font-medium" :class="getTableStatusClass(tableStatus)">
+                                        {{ tableStatus ?? 'unknown' }}
+                                    </span>
+                                </div>
+                                <div class="flex items-center justify-between">
                                     <span class="text-sm font-medium">Payment Status:</span>
                                     <span
                                         class="rounded-full px-2 py-1 text-xs font-medium"
@@ -343,6 +403,38 @@ const markAsPaid = () => {
                                                 </Button>
                                             </div>
                                         </TableCell>
+                                    </TableRow>
+                                </TableBody>
+                            </Table>
+                        </CardContent>
+                    </Card>
+
+                    <!-- Table Orders (other orders for same table) -->
+                    <Card class="md:col-span-3" v-if="props.tableOrders && props.tableOrders.length > 0">
+                        <CardHeader>
+                            <CardTitle>Other Orders for Table {{ props.order.table_number }}</CardTitle>
+                            <CardDescription>All active orders on this table</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Order</TableHead>
+                                        <TableHead>Total</TableHead>
+                                        <TableHead>Status</TableHead>
+                                        <TableHead>Created</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    <TableRow v-for="torder in props.tableOrders" :key="torder.id">
+                                        <TableCell class="font-medium">{{ torder.code.substring(0, 8) }}...</TableCell>
+                                        <TableCell>{{ formatPrice(torder.total_amount) }}</TableCell>
+                                        <TableCell>
+                                            <span class="rounded-full px-2 py-1 text-xs font-medium" :class="getStatusClass(torder.status)">
+                                                {{ torder.status }}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell>{{ formatDate(torder.created_at) }}</TableCell>
                                     </TableRow>
                                 </TableBody>
                             </Table>

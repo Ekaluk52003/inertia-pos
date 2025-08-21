@@ -1,6 +1,5 @@
 <?php
 
-use App\Events\BillRequested;
 use App\Events\OrderBilled;
 use App\Models\Menu;
 use App\Models\Order;
@@ -52,13 +51,12 @@ test('customer can request bill for active order', function () {
 
     $response->assertRedirect();
 
-    // Verify order status changed to billing
-    $order->refresh();
-    expect($order->status)->toBe('billing');
+    // Verify QR code status changed to billing and table event was broadcast
+    $qrCode->refresh();
+    expect($qrCode->status)->toBe('billing');
 
-    // Verify event was broadcasted
-    Event::assertDispatched(BillRequested::class, function ($event) use ($order) {
-        return $event->order->id === $order->id;
+    Event::assertDispatched(App\Events\TableBillRequested::class, function ($event) use ($qrCode) {
+        return $event->qrCode->id === $qrCode->id;
     });
 });
 
@@ -144,15 +142,14 @@ test('staff can mark order as billed', function () {
         'is_paid' => false,
     ]);
 
-    // Staff marks as billed
+    // Staff marks as billed (single order flow)
     $response = $this->actingAs($user)
         ->post("/restaurants/{$restaurant->id}/orders/{$order->id}/mark-billed");
 
     $response->assertRedirect();
 
-    // Verify order status and payment status
+    // Verify order is marked paid and event broadcasted
     $order->refresh();
-    expect($order->status)->toBe('billed');
     expect($order->is_paid)->toBeTrue();
 
     // Verify event was broadcasted

@@ -12,23 +12,15 @@ class BasePolicy
 
     /**
      * Determine if the user is the owner of the restaurant.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Restaurant  $restaurant
-     * @return bool
      */
     protected function isOwner(User $user, Restaurant $restaurant): bool
     {
-        // Allow any user with 'owner' role to access any restaurant
-        return $user->isOwner();
+        // Allow explicit owner role, or match by restaurant.owner_id for tests/fixtures that set owner_id
+        return $user->isOwner() || ($restaurant && $restaurant->owner_id === $user->id);
     }
 
     /**
      * Determine if the user is a staff member of the restaurant.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Restaurant  $restaurant
-     * @return bool
      */
     protected function isStaff(User $user, Restaurant $restaurant): bool
     {
@@ -37,10 +29,6 @@ class BasePolicy
 
     /**
      * Determine if the user is either the owner or a staff member of the restaurant.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Restaurant  $restaurant
-     * @return bool
      */
     protected function isOwnerOrStaff(User $user, Restaurant $restaurant): bool
     {

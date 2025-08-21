@@ -2,11 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Restaurant;
-use App\Models\QrCode;
 use App\Models\Menu;
 use App\Models\Order;
-use Illuminate\Http\Request;
+use App\Models\QrCode;
+use App\Models\Restaurant;
 use Inertia\Inertia;
 
 class PublicController extends Controller
@@ -14,8 +13,8 @@ class PublicController extends Controller
     /**
      * Display the public menu for a restaurant via QR code.
      *
-     * @param string $restaurantCode
-     * @param string $tableCode
+     * @param  string  $restaurantCode
+     * @param  string  $tableCode
      * @return \Inertia\Response
      */
     public function publicMenu($restaurantCode, $tableCode)
@@ -39,12 +38,13 @@ class PublicController extends Controller
             ->orderBy('category')
             ->orderBy('name')
             ->get()
-            ->map(function($item) {
+            ->map(function ($item) {
                 // Ensure we have the full URL for the image path
                 if ($item->image_path) {
                     // image_path accessor in the Menu model will handle the URL generation
                     $item->image_path = $item->image_path;
                 }
+
                 return $item;
             });
 
@@ -62,25 +62,25 @@ class PublicController extends Controller
         // Fetch all orders for this table for order history
         $orderHistory = Order::where('restaurant_id', $restaurant->id)
             ->where('table_number', $qrCode->table_number)
-            ->with(['orderItems' => function($query) {
+            ->with(['orderItems' => function ($query) {
                 $query->orderBy('created_at', 'desc');
             }])
             ->latest()
             ->get()
-            ->map(function($order) {
+            ->map(function ($order) {
                 // Convert orderItems to items for frontend consistency
-                $order->items = $order->orderItems->map(function($item) {
+                $order->items = $order->orderItems->map(function ($item) {
                     // Ensure options are properly formatted
                     if ($item->options && is_array($item->options)) {
                         // Create a new options array with the correct property names
                         $formattedOptions = [];
                         foreach ($item->options as $option) {
                             $formattedOption = $option;
-                            if (isset($option['optionName']) && !isset($option['option_name'])) {
+                            if (isset($option['optionName']) && ! isset($option['option_name'])) {
                                 $formattedOption['option_name'] = $option['optionName'];
                                 unset($formattedOption['optionName']);
                             }
-                            if (isset($option['additionalPrice']) && !isset($option['additional_price'])) {
+                            if (isset($option['additionalPrice']) && ! isset($option['additional_price'])) {
                                 $formattedOption['additional_price'] = $option['additionalPrice'];
                                 unset($formattedOption['additionalPrice']);
                             }
@@ -89,30 +89,32 @@ class PublicController extends Controller
                         // Set the formatted options on the item
                         $item->options = $formattedOptions;
                     }
+
                     return $item;
                 });
+
                 return $order;
             });
 
         // Load the active order's items if it exists
         if ($activeOrder) {
-            $activeOrder->load(['orderItems' => function($query) {
+            $activeOrder->load(['orderItems' => function ($query) {
                 $query->orderBy('created_at', 'desc');
             }]);
 
             // Convert orderItems to items for frontend consistency
-            $activeOrder->items = $activeOrder->orderItems->map(function($item) {
+            $activeOrder->items = $activeOrder->orderItems->map(function ($item) {
                 // Ensure options are properly formatted
                 if ($item->options && is_array($item->options)) {
                     // Create a new options array with the correct property names
                     $formattedOptions = [];
                     foreach ($item->options as $option) {
                         $formattedOption = $option;
-                        if (isset($option['optionName']) && !isset($option['option_name'])) {
+                        if (isset($option['optionName']) && ! isset($option['option_name'])) {
                             $formattedOption['option_name'] = $option['optionName'];
                             unset($formattedOption['optionName']);
                         }
-                        if (isset($option['additionalPrice']) && !isset($option['additional_price'])) {
+                        if (isset($option['additionalPrice']) && ! isset($option['additional_price'])) {
                             $formattedOption['additional_price'] = $option['additionalPrice'];
                             unset($formattedOption['additionalPrice']);
                         }
@@ -121,6 +123,7 @@ class PublicController extends Controller
                     // Set the formatted options on the item
                     $item->options = $formattedOptions;
                 }
+
                 return $item;
             });
         }
@@ -140,19 +143,19 @@ class PublicController extends Controller
         if (session('activeOrder')) {
             $activeOrder = session('activeOrder');
             // Make sure we have items for frontend consistency
-            if ($activeOrder->orderItems && !isset($activeOrder->items)) {
-                $activeOrder->items = $activeOrder->orderItems->map(function($item) {
+            if ($activeOrder->orderItems && ! isset($activeOrder->items)) {
+                $activeOrder->items = $activeOrder->orderItems->map(function ($item) {
                     // Ensure options are properly formatted
                     if ($item->options && is_array($item->options)) {
                         // Create a new options array with the correct property names
                         $formattedOptions = [];
                         foreach ($item->options as $option) {
                             $formattedOption = $option;
-                            if (isset($option['optionName']) && !isset($option['option_name'])) {
+                            if (isset($option['optionName']) && ! isset($option['option_name'])) {
                                 $formattedOption['option_name'] = $option['optionName'];
                                 unset($formattedOption['optionName']);
                             }
-                            if (isset($option['additionalPrice']) && !isset($option['additional_price'])) {
+                            if (isset($option['additionalPrice']) && ! isset($option['additional_price'])) {
                                 $formattedOption['additional_price'] = $option['additionalPrice'];
                                 unset($formattedOption['additionalPrice']);
                             }
@@ -161,6 +164,7 @@ class PublicController extends Controller
                         // Set the formatted options on the item
                         $item->options = $formattedOptions;
                     }
+
                     return $item;
                 });
             }
@@ -177,9 +181,22 @@ class PublicController extends Controller
                 'payBefore' => $restaurant->pay_before,
                 'promptPayId' => $restaurant->prompt_pay_id,
             ],
+            // include table and qr_code info so frontend can react to QR status (billing/checked/etc.)
             'table' => [
                 'number' => $qrCode->table_number,
                 'code' => $qrCode->code,
+                'qr_code' => [
+                    'id' => $qrCode->id,
+                    'status' => $qrCode->status,
+                    'is_active' => (bool) $qrCode->is_active,
+                ],
+            ],
+            // top-level compatibility prop: some pages read page.props.qr_code
+            'qr_code' => [
+                'id' => $qrCode->id,
+                'status' => $qrCode->status,
+                'table_number' => $qrCode->table_number,
+                'is_active' => (bool) $qrCode->is_active,
             ],
             'menuItems' => $menuItems,
             'orderHistory' => $orderHistory,

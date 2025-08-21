@@ -19,12 +19,12 @@ class OrderItemFactory extends Factory
     {
         return [
             'order_id' => Order::factory(),
-            'menu_id' => null,
+            'menu_id' => \App\Models\Menu::factory(),
             'name' => $this->faker->words(3, true),
             'price' => $this->faker->randomFloat(2, 5, 100),
             'quantity' => $this->faker->numberBetween(1, 5),
             'special_instructions' => $this->faker->optional()->sentence(),
-            'selected_options' => '[]',
+            'options' => '[]',
         ];
     }
 }

@@ -58,7 +58,7 @@ class Menu extends Model
      */
     protected function getImagePathAttribute($value)
     {
-        if (!$value) {
+        if (! $value) {
             return null;
         }
 
@@ -69,7 +69,7 @@ class Menu extends Model
 
         // If the path starts with /storage, prepend the app URL
         if (str_starts_with($value, '/storage')) {
-            return config('app.url') . $value;
+            return config('app.url').$value;
         }
 
         // Remove 'public/' prefix if it exists

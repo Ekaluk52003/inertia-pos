@@ -55,6 +55,8 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
                 'flash_order_created' => fn () => $request->session()->get('flash_order_created'),
+                'slip_verification' => fn () => $request->session()->get('slip_verification'),
+                'slip_error' => fn () => $request->session()->get('slip_error'),
             ],
         ];
     }

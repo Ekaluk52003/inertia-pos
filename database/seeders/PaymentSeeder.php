@@ -19,8 +19,7 @@ class PaymentSeeder extends Seeder
 
         foreach ($paidOrders as $order) {
             Payment::create([
-                'order_id' => $order->id,
-                'trans_ref' => 'TXN' . Str::random(8),
+                'trans_ref' => 'TXN'.Str::random(8),
                 'amount' => $order->total_amount,
                 'sender_name' => $this->getRandomName(),
                 'status' => 'completed',
@@ -42,7 +41,7 @@ class PaymentSeeder extends Seeder
         $firstNames = ['John', 'Jane', 'Michael', 'Sarah', 'David', 'Lisa', 'Robert', 'Emily', 'William', 'Olivia'];
         $lastNames = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Miller', 'Davis', 'Garcia', 'Rodriguez', 'Wilson'];
 
-        return $firstNames[array_rand($firstNames)] . ' ' . $lastNames[array_rand($lastNames)];
+        return $firstNames[array_rand($firstNames)].' '.$lastNames[array_rand($lastNames)];
     }
 
     /**
@@ -51,6 +50,7 @@ class PaymentSeeder extends Seeder
     private function getRandomPaymentMethod(): string
     {
         $methods = ['PromptPay', 'Credit Card', 'Cash', 'Mobile Banking'];
+
         return $methods[array_rand($methods)];
     }
 }

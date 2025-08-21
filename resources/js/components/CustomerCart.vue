@@ -253,7 +253,8 @@ const submitOrder = () => {
 </script>
 
 <template>
-    <div class="fixed right-4 bottom-4 left-4 md:left-auto">
+    <div class="fixed right-4 bottom-4 left-4 flex items-end justify-center gap-3 md:left-auto md:justify-end">
+        <!-- Cart toggle button -->
         <Button
             @click="cartStore.toggleCart"
             class="w-full md:w-auto"
@@ -272,6 +273,23 @@ const submitOrder = () => {
             <ChevronUp v-if="cartStore.showCart" class="ml-2 h-4 w-4" />
             <ChevronDown v-else class="ml-2 h-4 w-4" />
         </Button>
+
+        <!-- Compact Request Bill button placed next to cart toggle -->
+        <div v-if="cartStore.shouldShowBillButton && cartStore.canRequestBill" class="flex-shrink-0">
+            <Button
+                size="icon"
+                variant="default"
+                class="h-12 w-full rounded-lg bg-yellow-400 text-black shadow-lg hover:bg-yellow-500 md:h-10 md:w-10 md:rounded-full"
+                @click.stop="cartStore.requestBill()"
+                :title="cartStore.restaurant && cartStore.restaurant.payBefore ? 'Request Bill (Paid)' : 'Request Bill'"
+            >
+                <!-- Use a simple ₿ style bill icon via text for compactness; keep it accessible -->
+                <span class="sr-only">Request Bill</span>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M4 4h16v2H4zM4 20h16v-2H4zM6 7h12v10H6z" />
+                </svg>
+            </Button>
+        </div>
 
         <!-- Cart Panel -->
         <Card

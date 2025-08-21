@@ -19,7 +19,7 @@ class BillController extends Controller
         $this->authorize('viewAny', [Bill::class, $restaurant]);
 
         $bills = $restaurant->bills()
-            ->with('order')
+            ->with(['orders', 'qrCode'])
             ->orderBy('created_at', 'desc')
             ->paginate(15);
 
@@ -36,7 +36,7 @@ class BillController extends Controller
     {
         $this->authorize('view', $bill);
 
-        $bill->load('order.orderItems');
+        $bill->load('orders.orderItems', 'qrCode');
 
         return Inertia::render('Bill/Show', [
             'restaurant' => $restaurant,
@@ -60,7 +60,7 @@ class BillController extends Controller
         // Create a new bill
         $bill = $order->bill()->create([
             'restaurant_id' => $restaurant->id,
-            'code' => 'BILL-' . Str::random(8),
+            'code' => 'BILL-'.Str::random(8),
             'total_amount' => $order->total_amount,
             'status' => $order->is_paid ? 'paid' : 'pending',
         ]);
@@ -84,7 +84,14 @@ class BillController extends Controller
 
         // If bill is marked as paid, also mark the order as paid
         if ($validated['status'] === 'paid') {
-            $bill->order()->update(['is_paid' => true]);
+            // mark all attached orders as paid
+            if ($bill->orders()->exists()) {
+                foreach ($bill->orders as $order) {
+                    $order->update(['is_paid' => true]);
+                }
+            } elseif ($bill->order()->exists()) {
+                $bill->order()->update(['is_paid' => true]);
+            }
         }
 
         return back()->with('success', 'Bill status updated.');
@@ -99,10 +106,10 @@ class BillController extends Controller
         $restaurant = $order->restaurant;
 
         // Create a bill if it doesn't exist
-        if (!$order->bill()->exists()) {
+        if (! $order->bill()->exists()) {
             $bill = $order->bill()->create([
                 'restaurant_id' => $restaurant->id,
-                'code' => 'BILL-' . Str::random(8),
+                'code' => 'BILL-'.Str::random(8),
                 'total_amount' => $order->total_amount,
                 'status' => $order->is_paid ? 'paid' : 'pending',
             ]);

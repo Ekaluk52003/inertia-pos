@@ -13,10 +13,6 @@ class MenuPolicy extends BasePolicy
 
     /**
      * Determine whether the user can view any menu items.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Restaurant  $restaurant
-     * @return bool
      */
     public function viewAny(User $user, Restaurant $restaurant): bool
     {
@@ -25,10 +21,6 @@ class MenuPolicy extends BasePolicy
 
     /**
      * Determine whether the user can view the menu item.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Menu  $menu
-     * @return bool
      */
     public function view(User $user, Menu $menu): bool
     {
@@ -37,10 +29,6 @@ class MenuPolicy extends BasePolicy
 
     /**
      * Determine whether the user can create menu items.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Restaurant  $restaurant
-     * @return bool
      */
     public function create(User $user, Restaurant $restaurant): bool
     {
@@ -49,10 +37,6 @@ class MenuPolicy extends BasePolicy
 
     /**
      * Determine whether the user can update the menu item.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Menu  $menu
-     * @return bool
      */
     public function update(User $user, Menu $menu): bool
     {
@@ -61,10 +45,6 @@ class MenuPolicy extends BasePolicy
 
     /**
      * Determine whether the user can delete the menu item.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Menu  $menu
-     * @return bool
      */
     public function delete(User $user, Menu $menu): bool
     {
@@ -73,10 +53,6 @@ class MenuPolicy extends BasePolicy
 
     /**
      * Determine whether the user can toggle the availability of the menu item.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Menu  $menu
-     * @return bool
      */
     public function toggleAvailability(User $user, Menu $menu): bool
     {

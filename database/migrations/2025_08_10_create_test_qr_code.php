@@ -1,10 +1,8 @@
 <?php
 
-use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
-use App\Models\Restaurant;
 use App\Models\QrCode;
+use App\Models\Restaurant;
+use Illuminate\Database\Migrations\Migration;
 
 return new class extends Migration
 {
@@ -15,7 +13,7 @@ return new class extends Migration
     {
         // Get the first restaurant
         $restaurant = Restaurant::first();
-        
+
         if ($restaurant) {
             // Create a test QR code for the restaurant
             QrCode::create([

@@ -7,6 +7,7 @@ use App\Models\Payment;
 use App\Models\Restaurant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 
@@ -19,27 +20,42 @@ class PaymentController extends Controller
     {
         $this->authorize('viewAny', [Payment::class, $restaurant]);
 
-        // Build the base query so we can reuse it for an explicit total count
-        $paymentsQuery = Payment::whereHas('order', function ($query) use ($restaurant) {
-            $query->where('restaurant_id', $restaurant->id);
-        })->with('order')->orderBy('created_at', 'desc');
+        // Build the base query depending on available schema / relations.
+        // New model behavior: Payments are table-level and may not have an order relation.
+        // Be defensive: prefer a direct payments.restaurant_id column if present; fall back to
+        // whereHas('order') only when the payments table doesn't have restaurant_id but orders exist.
+        if (Schema::hasColumn('payments', 'restaurant_id')) {
+            $paymentsQuery = Payment::where('restaurant_id', $restaurant->id)->orderBy('created_at', 'desc');
+            $paymentsTotalDirect = Payment::where('restaurant_id', $restaurant->id)->count();
+            $paymentsTotalViaOrder = 0;
+        } elseif (Schema::hasColumn('payments', 'order_id')) {
+            // Legacy: payments linked to orders
+            $paymentsQuery = Payment::whereHas('order', function ($query) use ($restaurant) {
+                $query->where('restaurant_id', $restaurant->id);
+            })->with('order')->orderBy('created_at', 'desc');
 
-    // Paginate the results for the view (3 per page while testing pagination)
-    $payments = $paymentsQuery->paginate(3);
+            // Totals for diagnostics
+            $paymentsTotalViaOrder = Payment::whereHas('order', function ($query) use ($restaurant) {
+                $query->where('restaurant_id', $restaurant->id);
+            })->count();
 
-        // Also compute explicit totals to compare against the paginator's total()
-        $paymentsTotalViaOrder = Payment::whereHas('order', function ($query) use ($restaurant) {
-            $query->where('restaurant_id', $restaurant->id);
-        })->count();
+            $paymentsTotalDirect = 0;
+        } else {
+            // No useful columns available on payments table: return an empty paginator
+            $paymentsQuery = Payment::whereNull('id');
+            $paymentsTotalDirect = 0;
+            $paymentsTotalViaOrder = 0;
+        }
 
-        // Some records might have a direct restaurant_id on the payments table — count those too
-        $paymentsTotalDirect = Payment::where('restaurant_id', $restaurant->id)->count();
+        // Paginate the results for the view (3 per page while testing pagination)
+        $payments = $paymentsQuery->paginate(3);
 
         // Ensure table_number is available from order relationship
         $payments->getCollection()->transform(function ($payment) {
-            if (!$payment->table_number && $payment->order) {
+            if (! $payment->table_number && isset($payment->order) && $payment->order) {
                 $payment->table_number = $payment->order->table_number;
             }
+
             return $payment;
         });
 
@@ -85,7 +101,7 @@ class PaymentController extends Controller
 
         // Create the payment record
         $payment = $order->payments()->create([
-            'trans_ref' => 'PAY-' . Str::random(10),
+            'trans_ref' => 'PAY-'.Str::random(10),
             'amount' => $validated['amount'],
             'sender_name' => $validated['sender_name'] ?? null,
             'status' => 'completed',

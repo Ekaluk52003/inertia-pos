@@ -17,6 +17,7 @@ class Bill extends Model
     protected $fillable = [
         'restaurant_id',
         'order_id',
+        'qr_code_id',
         'code',
         'total_amount',
         'status',
@@ -45,5 +46,18 @@ class Bill extends Model
     public function order()
     {
         return $this->belongsTo(Order::class);
+    }
+
+    /**
+     * If bill is created for a table, it may link to multiple orders.
+     */
+    public function orders()
+    {
+        return $this->belongsToMany(Order::class, 'bill_order');
+    }
+
+    public function qrCode()
+    {
+        return $this->belongsTo(QrCode::class);
     }
 }

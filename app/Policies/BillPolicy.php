@@ -13,10 +13,6 @@ class BillPolicy extends BasePolicy
 
     /**
      * Determine whether the user can view any bills.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Restaurant  $restaurant
-     * @return bool
      */
     public function viewAny(User $user, Restaurant $restaurant): bool
     {
@@ -25,10 +21,6 @@ class BillPolicy extends BasePolicy
 
     /**
      * Determine whether the user can view the bill.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Bill  $bill
-     * @return bool
      */
     public function view(User $user, Bill $bill): bool
     {
@@ -37,10 +29,6 @@ class BillPolicy extends BasePolicy
 
     /**
      * Determine whether the user can create bills.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Restaurant  $restaurant
-     * @return bool
      */
     public function create(User $user, Restaurant $restaurant): bool
     {
@@ -49,10 +37,6 @@ class BillPolicy extends BasePolicy
 
     /**
      * Determine whether the user can update the bill.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Bill  $bill
-     * @return bool
      */
     public function update(User $user, Bill $bill): bool
     {

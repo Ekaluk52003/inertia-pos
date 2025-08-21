@@ -74,13 +74,13 @@ class MenusController extends Controller
         ]);
 
         // Process options to ensure required and multiple properties are set
-        if (!empty($validated['options'])) {
+        if (! empty($validated['options'])) {
             foreach ($validated['options'] as $key => $option) {
                 // Set default values for required and multiple if not provided
-                if (!isset($option['required'])) {
+                if (! isset($option['required'])) {
                     $validated['options'][$key]['required'] = true; // Default to required
                 }
-                if (!isset($option['multiple'])) {
+                if (! isset($option['multiple'])) {
                     $validated['options'][$key]['multiple'] = false; // Default to single selection
                 }
             }
@@ -124,10 +124,10 @@ class MenusController extends Controller
     public function update(Request $request, Restaurant $restaurant, Menu $menu)
     {
         $this->authorize('update', $menu);
-        
+
         // Debug incoming request data
         \Illuminate\Support\Facades\Log::debug('Menu update request data:', $request->all());
-        \Illuminate\Support\Facades\Log::debug('Current menu is_available value: ' . ($menu->is_available ? 'true' : 'false'));
+        \Illuminate\Support\Facades\Log::debug('Current menu is_available value: '.($menu->is_available ? 'true' : 'false'));
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
@@ -147,13 +147,13 @@ class MenusController extends Controller
         ]);
 
         // Process options to ensure required and multiple properties are set
-        if (!empty($validated['options'])) {
+        if (! empty($validated['options'])) {
             foreach ($validated['options'] as $key => $option) {
                 // Set default values for required and multiple if not provided
-                if (!isset($option['required'])) {
+                if (! isset($option['required'])) {
                     $validated['options'][$key]['required'] = true; // Default to required
                 }
-                if (!isset($option['multiple'])) {
+                if (! isset($option['multiple'])) {
                     $validated['options'][$key]['multiple'] = false; // Default to single selection
                 }
             }
@@ -161,10 +161,10 @@ class MenusController extends Controller
 
         if ($request->hasFile('image')) {
             // Delete old image if exists and it's not a URL
-            if ($menu->image_path && !filter_var($menu->image_path, FILTER_VALIDATE_URL)) {
+            if ($menu->image_path && ! filter_var($menu->image_path, FILTER_VALIDATE_URL)) {
                 Storage::disk('public')->delete($menu->image_path);
             }
-            
+
             $path = $request->file('image')->store('menu-images', 'public');
             $validated['image_path'] = $path;
         } elseif ($request->filled('image_url')) {
@@ -174,21 +174,21 @@ class MenusController extends Controller
 
         // Debug validated data before saving
         \Illuminate\Support\Facades\Log::debug('Validated data before update:', $validated);
-        
+
         // Explicitly set is_available to ensure it's properly handled
         if (isset($validated['is_available'])) {
-            $validated['is_available'] = (bool)$validated['is_available'];
-            \Illuminate\Support\Facades\Log::debug('is_available after boolean conversion: ' . ($validated['is_available'] ? 'true' : 'false'));
+            $validated['is_available'] = (bool) $validated['is_available'];
+            \Illuminate\Support\Facades\Log::debug('is_available after boolean conversion: '.($validated['is_available'] ? 'true' : 'false'));
         } else {
             // If is_available is not in the validated data, set a default
             $validated['is_available'] = false;
             \Illuminate\Support\Facades\Log::debug('is_available not in validated data, setting default: false');
         }
-        
+
         $menu->update($validated);
-        
+
         // Debug after update
-        \Illuminate\Support\Facades\Log::debug('Menu after update, is_available: ' . ($menu->fresh()->is_available ? 'true' : 'false'));
+        \Illuminate\Support\Facades\Log::debug('Menu after update, is_available: '.($menu->fresh()->is_available ? 'true' : 'false'));
 
         return redirect()->route('menu.index', $restaurant)
             ->with('success', 'Menu item updated successfully.');
@@ -220,7 +220,7 @@ class MenusController extends Controller
         $this->authorize('update', $menu);
 
         $menu->update([
-            'is_available' => !$menu->is_available,
+            'is_available' => ! $menu->is_available,
         ]);
 
         return redirect()->route('menu.index', $restaurant)

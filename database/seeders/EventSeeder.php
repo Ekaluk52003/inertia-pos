@@ -17,7 +17,7 @@ class EventSeeder extends Seeder
     {
         // Clear existing events
         Event::truncate();
-        
+
         // Create sample events
         $events = [
             [

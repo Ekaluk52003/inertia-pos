@@ -41,7 +41,7 @@ class OrderSeeder extends Seeder
             $tableNumber = rand(1, 10);
             $isPaid = rand(0, 1) === 1;
             $orderStatus = $isPaid ? 'completed' : $statuses[array_rand($statuses)];
-            
+
             // Create an order from today
             $order = Order::create([
                 'restaurant_id' => $restaurant->id,
@@ -58,16 +58,16 @@ class OrderSeeder extends Seeder
             // Add 2-5 random menu items to the order
             $orderTotal = 0;
             $itemCount = rand(2, 5);
-            
+
             $selectedItems = $menuItems->random($itemCount);
-            
+
             foreach ($selectedItems as $menuItem) {
                 $quantity = rand(1, 3);
                 $itemStatus = $isPaid ? 'completed' : $statuses[array_rand($statuses)];
                 $itemPrice = $menuItem->price;
                 $itemTotal = $itemPrice * $quantity;
                 $orderTotal += $itemTotal;
-                
+
                 OrderItem::create([
                     'order_id' => $order->id,
                     'menu_id' => $menuItem->id,
@@ -86,7 +86,7 @@ class OrderSeeder extends Seeder
         // Create some orders from yesterday
         for ($i = 1; $i <= 3; $i++) {
             $tableNumber = rand(1, 10);
-            
+
             $order = Order::create([
                 'restaurant_id' => $restaurant->id,
                 'table_number' => $tableNumber,
@@ -102,15 +102,15 @@ class OrderSeeder extends Seeder
             // Add 1-4 random menu items to the order
             $orderTotal = 0;
             $itemCount = rand(1, 4);
-            
+
             $selectedItems = $menuItems->random($itemCount);
-            
+
             foreach ($selectedItems as $menuItem) {
                 $quantity = rand(1, 2);
                 $itemPrice = $menuItem->price;
                 $itemTotal = $itemPrice * $quantity;
                 $orderTotal += $itemTotal;
-                
+
                 OrderItem::create([
                     'order_id' => $order->id,
                     'menu_id' => $menuItem->id,

@@ -15,7 +15,7 @@ const cartStore = useCartStore();
 
 // Get page props for flash messages and debug data
 const page = usePage();
-const flash = computed(() => page.props.flash);
+const flash = computed(() => (page.props as any).flash as any);
 
 // Debug restaurant data
 console.log('Full restaurant object:', page.props.restaurant);
@@ -185,6 +185,16 @@ const menuItemsByCategory = computed(() => {
     return result;
 });
 
+// Determine if the table's QR code is in billing status (block menu and force invoice)
+const qrStatus = computed(() => {
+    // prefer explicit page prop, then props.table.qr_code if present
+    // use optional chaining defensively
+    // @ts-ignore - page.props is dynamic
+    return (page.props as any).qr_code?.status ?? (props.table as any)?.qr_code?.status ?? (page.props as any).table?.qr_code?.status ?? null;
+});
+
+const isBilling = computed(() => qrStatus.value === 'billing');
+
 // Get button text based on payment method
 const getBillButtonText = () => {
     if (!props.restaurant.payBefore) {
@@ -204,28 +214,84 @@ const handleRequestBill = async () => {
 
 // Methods
 const openOptionModal = (item: MenuItem) => {
+    if (isBilling.value) return;
     // Check if the item has valid options with choices or values
     if (!hasValidOptions(item)) {
-        cartStore.addToCart(item);
+        cartStore.addToCart(item as any);
         return;
     }
 
     // Open the modal for items with valid options
-    cartStore.openOptionModal(item);
+    cartStore.openOptionModal(item as any);
 };
 
 const addToCart = (item: MenuItem) => {
+    if (isBilling.value) return;
     // Check if the item has valid options with choices
     if (hasValidOptions(item)) {
         openOptionModal(item);
         return;
     }
 
-    cartStore.addToCart(item);
+    cartStore.addToCart(item as any);
 };
 
 const formatPrice = (price: number) => {
     return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB' }).format(price);
+};
+
+// Handle slip upload emitted from CustomerInvoice component
+const handleSlipUploadEmit = async (payload: { slip: string; fileName?: string }) => {
+    try {
+        // Build request payload expected by server
+        const body = {
+            slip_image: payload.slip,
+            file_name: payload.fileName || null,
+        };
+
+        // Read CSRF token if present
+        const tokenMeta = document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null;
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (tokenMeta && tokenMeta.content) {
+            headers['X-CSRF-TOKEN'] = tokenMeta.content;
+        }
+
+        const res = await window.fetch('/public/slip/verify', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+            credentials: 'same-origin',
+        });
+
+        // Try to parse JSON response; if not JSON, throw with text
+        const text = await res.text();
+        let data: any = null;
+        try {
+            data = text ? JSON.parse(text) : null;
+        } catch (e) {
+            throw new Error(text || `Unexpected response from server: ${res.status}`);
+        }
+
+        if (!res.ok) {
+            const msg = data?.message || data?.error || JSON.stringify(data) || `Request failed: ${res.status}`;
+            // emit a flash or console error
+            console.error('Slip verification failed:', msg);
+            // show a flash via Inertia props if possible
+            // @ts-ignore
+            if ((window as any).Inertia) {
+                // no-op: server side flash handling will surface on redirect; here we console.log
+            }
+            return;
+        }
+
+        // Success - server should return JSON with verification result
+        console.log('Slip verification response:', data);
+
+        // Optionally, you may want to refresh the page props or update cartStore
+        // For now, show success in console and rely on existing flashes from server
+    } catch (err: any) {
+        console.error('Error uploading slip', err?.message ?? err);
+    }
 };
 
 // Color gradients to use for cards. We keep a short palette and pick by index so cards are colorful.
@@ -296,18 +362,19 @@ const scrollToCategory = (category: string) => {
             </Alert>
         </div>
 
-        <!-- Invoice View (when bill is requested) -->
-        <div v-if="cartStore.shouldShowInvoice" class="flex h-full flex-1 flex-col p-4">
+        <!-- Invoice View (when bill is requested or table is in billing state) -->
+        <div v-if="cartStore.shouldShowInvoice || isBilling" class="flex h-full flex-1 flex-col p-4">
             <CustomerInvoice
                 :restaurant="restaurant"
                 :table="table"
                 :active-order="cartStore.activeOrder"
-                :show-payment-qr="cartStore.shouldShowPaymentQR"
+                :show-payment-qr="cartStore.shouldShowPaymentQR || isBilling"
+                @slip-upload="handleSlipUploadEmit"
             />
         </div>
 
-        <!-- Menu View (when order is active) -->
-        <div v-if="cartStore.shouldShowMenu" class="flex h-full flex-1 flex-col gap-4 overflow-x-auto p-4 pb-24 md:pb-4">
+        <!-- Menu View (when order is active) - hidden when table is in billing state -->
+        <div v-if="cartStore.shouldShowMenu && !isBilling" class="flex h-full flex-1 flex-col gap-4 overflow-x-auto p-4 pb-24 md:pb-4">
             <!-- Restaurant Header -->
             <div class="py-4 text-center">
                 <h1 class="text-2xl font-bold">{{ restaurant.name }}</h1>
@@ -377,7 +444,8 @@ const scrollToCategory = (category: string) => {
                                     variant="default"
                                     @click="addToCart(item)"
                                     class="max-w-xs flex-1 border-white/10 bg-white/10 px-3 py-1 text-sm text-white hover:bg-white/20"
-                                    :title="hasValidOptions(item) ? 'Select options' : 'Add to cart'"
+                                    :title="isBilling ? 'Ordering disabled while billing' : hasValidOptions(item) ? 'Select options' : 'Add to cart'"
+                                    :disabled="isBilling"
                                 >
                                     <ShoppingCart class="mr-2 h-4 w-4" />
                                     <span>Add</span>
@@ -397,20 +465,12 @@ const scrollToCategory = (category: string) => {
                 </div>
             </div>
 
-            <!-- Request Bill Button -->
-            <div v-if="cartStore.shouldShowBillButton && cartStore.canRequestBill" class="fixed right-4 bottom-20 left-4 md:bottom-4">
-                <Button
-                    @click="handleRequestBill"
-                    class="w-full rounded-lg bg-yellow-400 px-6 py-3 font-semibold text-black shadow-lg hover:bg-yellow-500"
-                >
-                    {{ getBillButtonText() }}
-                </Button>
-            </div>
+            <!-- Request Bill button moved into the floating cart control (see CustomerCart.vue) -->
         </div>
 
         <!-- Cart Component (only show when menu is active) -->
         <CustomerCart
-            v-if="cartStore.shouldShowMenu"
+            v-if="cartStore.shouldShowMenu && !isBilling"
             :restaurant-id="props.restaurant.id"
             :table-code="props.table.code"
             :pay-before="props.restaurant.payBefore"

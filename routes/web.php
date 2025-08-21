@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\BillController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\MenusController;
 use App\Http\Controllers\OrderController;
@@ -72,16 +71,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Order routes
         Route::get('orders', [OrderController::class, 'index'])->name('orders.index');
         Route::get('orders/{order}', [OrderController::class, 'show'])->name('orders.show');
+        // Table details (new dedicated route)
+        Route::get('tables/{tableNumber}', [OrderController::class, 'tableShow'])->name('orders.table.show');
+        // Table-level action: staff marks table as checked (creates aggregated payment for the table)
+        Route::post('tables/{tableNumber}/check', [OrderController::class, 'markTableChecked'])->name('orders.table.check');
         Route::patch('orders/{order}/item-status', [OrderController::class, 'updateItemStatus'])->name('orders.update-item-status');
         Route::patch('orders/{order}/mark-paid', [OrderController::class, 'markAsPaid'])->name('orders.mark-paid');
         Route::post('orders/{order}/mark-billed', [OrderController::class, 'markBilled'])->name('orders.mark-billed');
         Route::get('kitchen', [OrderController::class, 'kitchenView'])->name('kitchen.show');
 
-        // Bill routes
-        Route::get('bills', [BillController::class, 'index'])->name('bills.index');
-        Route::get('bills/{bill}', [BillController::class, 'show'])->name('bills.show');
-        Route::post('orders/{order}/generate-bill', [BillController::class, 'generate'])->name('bills.generate');
-        Route::patch('bills/{bill}/status', [BillController::class, 'updateStatus'])->name('bills.update-status');
+        // Bill routes removed: billing is now table-level via QR codes; no BillController
 
         // Payment routes
         Route::get('payments', [PaymentController::class, 'index'])->name('payments.index');
@@ -110,6 +109,9 @@ Route::prefix('public')->group(function () {
 
     // Payment processing
     Route::post('order/{orderCode}/pay', [PaymentController::class, 'processPayment'])->name('public.payment.process');
+
+    // Slip verification endpoint (verify uploaded slip without creating an order)
+    Route::post('slip/verify', [OrderController::class, 'verifySlip'])->name('public.slip.verify');
 });
 
 require __DIR__.'/settings.php';

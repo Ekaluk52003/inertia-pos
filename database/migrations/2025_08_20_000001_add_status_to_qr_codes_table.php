@@ -8,13 +8,11 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     *
-     * Add options column to order_items table to store selected menu item options
      */
     public function up(): void
     {
-        Schema::table('order_items', function (Blueprint $table) {
-            $table->json('options')->nullable()->after('special_instructions');
+        Schema::table('qr_codes', function (Blueprint $table) {
+            $table->string('status')->default('available')->after('is_active');
         });
     }
 
@@ -23,8 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('order_items', function (Blueprint $table) {
-            $table->dropColumn('options');
+        Schema::table('qr_codes', function (Blueprint $table) {
+            $table->dropColumn('status');
         });
     }
 };

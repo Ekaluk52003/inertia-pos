@@ -28,6 +28,16 @@ interface Props {
             total: number;
         };
     };
+    // Optional table aggregation provided by the server
+    tables?: Array<{
+        table_number: string;
+        orders_count: number;
+        total_amount: number;
+        last_activity: string;
+        status: string;
+        is_paid: boolean;
+        orders: Order[];
+    }>;
 }
 
 interface Order {
@@ -109,7 +119,7 @@ const calculateItemTotal = (item: any): number => {
 // Track processing state per order so we can show a spinner
 const processingOrders = ref<Record<number, boolean>>({});
 
-// Navigate to an order show page without triggering the Inertia progress bar
+// Navigate to an order or table show page without triggering the Inertia progress bar
 const goToOrder = (order: Order) => {
     processingOrders.value[order.id] = true;
     router.get(
@@ -123,6 +133,25 @@ const goToOrder = (order: Order) => {
             },
             onError: () => {
                 processingOrders.value[order.id] = false;
+            },
+        },
+    );
+};
+
+// Navigate to a table details (use the first order of that table as the anchor)
+const goToTable = (table: any) => {
+    processingOrders.value[table.table_number] = true;
+    router.get(
+        route('orders.table.show', { restaurant: props.restaurant.id, tableNumber: table.table_number }),
+        {},
+        {
+            preserveScroll: true,
+            showProgress: false,
+            onFinish: () => {
+                processingOrders.value[table.table_number] = false;
+            },
+            onError: () => {
+                processingOrders.value[table.table_number] = false;
             },
         },
     );
@@ -201,93 +230,39 @@ const markOrderBilled = (order: Order) => {
                     <CardContent>
                         <Table>
                             <caption class="mt-4 mb-2 text-sm text-gray-500">
-                                A list of all orders.
+                                A list of active tables and their aggregated totals.
                             </caption>
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead>Order ID</TableHead>
                                     <TableHead>Table</TableHead>
+                                    <TableHead>Orders</TableHead>
                                     <TableHead>Total</TableHead>
                                     <TableHead>Status</TableHead>
-                                    <TableHead>Payment</TableHead>
-                                    <TableHead>Created</TableHead>
+                                    <TableHead>Last Activity</TableHead>
                                     <TableHead>Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                <TableRow v-for="order in props.orders.data || []" :key="order.id">
-                                    <TableCell class="font-medium">{{ order.code.substring(0, 8) }}...</TableCell>
-                                    <TableCell>{{ order.table_number }}</TableCell>
-                                    <TableCell>{{ formatPrice(order.total_amount) }}</TableCell>
+                                <TableRow v-for="table in props.tables || []" :key="table.table_number">
+                                    <TableCell class="font-medium">{{ table.table_number }}</TableCell>
+                                    <TableCell>{{ table.orders_count }}</TableCell>
+                                    <TableCell>{{ formatPrice(table.total_amount) }}</TableCell>
                                     <TableCell>
-                                        <span class="rounded-full px-2 py-1 text-xs font-medium" :class="getStatusClass(order.status)">
-                                            {{ order.status }}
+                                        <span class="rounded-full px-2 py-1 text-xs font-medium" :class="getStatusClass(table.status)">
+                                            {{ table.status }}
                                         </span>
                                     </TableCell>
-                                    <TableCell>
-                                        <span class="rounded-full px-2 py-1 text-xs font-medium" :class="getPaymentClass(order.is_paid)">
-                                            {{ order.is_paid ? 'Paid' : 'Unpaid' }}
-                                        </span>
-                                    </TableCell>
-                                    <TableCell>{{ formatDate(order.created_at) }}</TableCell>
+                                    <TableCell>{{ formatDate(table.last_activity) }}</TableCell>
                                     <TableCell>
                                         <div class="flex space-x-2">
-                                            <Button variant="outline" size="sm" @click="goToOrder(order)">
-                                                <svg v-if="processingOrders[order.id]" class="mr-2 h-4 w-4 animate-spin" viewBox="0 0 24 24">
-                                                    <circle
-                                                        class="opacity-25"
-                                                        cx="12"
-                                                        cy="12"
-                                                        r="10"
-                                                        stroke="currentColor"
-                                                        stroke-width="4"
-                                                        fill="none"
-                                                    ></circle>
-                                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-                                                </svg>
-                                                View
-                                            </Button>
+                                            <Button variant="outline" size="sm" @click="goToTable(table)"> View </Button>
                                             <Button
-                                                v-if="!order.is_paid && order.status !== 'billing'"
-                                                variant="outline"
-                                                size="sm"
-                                                @click="markOrderPaid(order)"
-                                                :disabled="processingOrders[order.id] === true"
-                                            >
-                                                <svg v-if="processingOrders[order.id]" class="mr-2 h-4 w-4 animate-spin" viewBox="0 0 24 24">
-                                                    <circle
-                                                        class="opacity-25"
-                                                        cx="12"
-                                                        cy="12"
-                                                        r="10"
-                                                        stroke="currentColor"
-                                                        stroke-width="4"
-                                                        fill="none"
-                                                    ></circle>
-                                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-                                                </svg>
-                                                Mark Paid
-                                            </Button>
-                                            <Button
-                                                v-if="order.status === 'billing'"
+                                                v-if="table.status === 'billing'"
                                                 variant="default"
                                                 size="sm"
-                                                @click="markOrderBilled(order)"
-                                                :disabled="processingOrders[order.id] === true"
+                                                @click="markOrderBilled(table.orders[0])"
                                                 class="bg-purple-600 hover:bg-purple-700"
                                             >
-                                                <svg v-if="processingOrders[order.id]" class="mr-2 h-4 w-4 animate-spin" viewBox="0 0 24 24">
-                                                    <circle
-                                                        class="opacity-25"
-                                                        cx="12"
-                                                        cy="12"
-                                                        r="10"
-                                                        stroke="currentColor"
-                                                        stroke-width="4"
-                                                        fill="none"
-                                                    ></circle>
-                                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-                                                </svg>
                                                 Mark Billed
                                             </Button>
                                         </div>

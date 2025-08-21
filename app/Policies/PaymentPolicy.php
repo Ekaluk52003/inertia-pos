@@ -13,10 +13,6 @@ class PaymentPolicy extends BasePolicy
 
     /**
      * Determine whether the user can view any payments.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Restaurant  $restaurant
-     * @return bool
      */
     public function viewAny(User $user, Restaurant $restaurant): bool
     {
@@ -25,13 +21,21 @@ class PaymentPolicy extends BasePolicy
 
     /**
      * Determine whether the user can view the payment.
-     *
-     * @param  \App\Models\User  $user
-     * @param  \App\Models\Payment  $payment
-     * @return bool
      */
     public function view(User $user, Payment $payment): bool
     {
-        return $this->isOwnerOrStaff($user, $payment->order->restaurant);
+        // Payment may not be linked to an order anymore. Prefer using the
+        // payment->restaurant relation if available; otherwise fall back to
+        // trying payment->order->restaurant when that relation exists.
+        if ($payment->restaurant) {
+            return $this->isOwnerOrStaff($user, $payment->restaurant);
+        }
+
+        if (isset($payment->order) && $payment->order) {
+            return $this->isOwnerOrStaff($user, $payment->order->restaurant);
+        }
+
+        // Conservative default: deny if we can't determine restaurant.
+        return false;
     }
 }

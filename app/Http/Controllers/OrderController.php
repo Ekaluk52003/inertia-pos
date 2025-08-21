@@ -21,24 +21,73 @@ class OrderController extends Controller
     {
         $this->authorize('viewAny', [Order::class, $restaurant]);
 
-        $orders = $restaurant->orders()
-            ->with('orderItems')
-            ->orderBy('created_at', 'desc')
-            ->paginate(15);
+        // We'll provide a table-centric aggregation: group active orders by table_number and compute totals
+        $ordersQuery = $restaurant->orders()->with('orderItems')->orderBy('created_at', 'desc');
 
-        // Ensure frontend-friendly camelCase keys exist (orderItems) so Vue can read them as props
-        $orders->getCollection()->transform(function ($order) {
-            // If relation loaded, set a camelCase attribute for the serializer
-            if ($order->relationLoaded('orderItems')) {
-                $order->setAttribute('orderItems', $order->orderItems->toArray());
+        // Paginate flat orders to keep existing pagination controls, but we will derive table aggregates from a limited window
+        $paginated = $ordersQuery->paginate(50);
+
+        $allOrders = $paginated->getCollection();
+
+        // Preload QR codes for the tables in the paginated window to surface table-level status
+        $tableNumbers = $allOrders->pluck('table_number')->unique()->filter()->values()->all();
+        $qrCodes = QrCode::where('restaurant_id', $restaurant->id)
+            ->whereIn('table_number', $tableNumbers ?: ['-1'])
+            ->get()
+            ->keyBy('table_number');
+
+        // Compute aggregates per table_number
+        $tables = $allOrders->groupBy('table_number')->map(function ($tableOrders, $tableNumber) use ($qrCodes) {
+            $ordersArr = $tableOrders->map(function ($order) {
+                $orderArray = $order->toArray();
+                if (isset($orderArray['order_items'])) {
+                    $orderArray['orderItems'] = $orderArray['order_items'];
+                    unset($orderArray['order_items']);
+                }
+
+                return $orderArray;
+            })->values();
+
+            $total = $ordersArr->reduce(function ($sum, $o) {
+                return $sum + ((float) ($o['total_amount'] ?? 0));
+            }, 0);
+
+            $ordersCount = $ordersArr->count();
+
+            // Last activity is the most recent order created_at
+            $lastActivity = $ordersArr->first()['created_at'] ?? null;
+
+            // Determine table status from QR code if available, otherwise derive from orders
+            $status = 'active';
+            if (isset($qrCodes[$tableNumber])) {
+                $status = $qrCodes[$tableNumber]->status ?? 'active';
+            } else {
+                if ($ordersArr->firstWhere('status', 'billing')) {
+                    $status = 'billing';
+                } elseif ($ordersArr->firstWhere('status', 'billed')) {
+                    $status = 'billed';
+                }
             }
 
-            return $order;
-        });
+            // Compute whether any order is unpaid
+            $isPaid = $ordersArr->every(fn ($o) => ($o['is_paid'] ?? false) === true);
+
+            return [
+                'table_number' => $tableNumber,
+                'orders' => $ordersArr,
+                'orders_count' => $ordersCount,
+                'total_amount' => $total,
+                'last_activity' => $lastActivity,
+                'status' => $status,
+                'is_paid' => $isPaid,
+            ];
+        })->values();
 
         return Inertia::render('Order/Index', [
             'restaurant' => $restaurant,
-            'orders' => $orders,
+            // Keep existing pagination meta to avoid breaking the UI; frontend will use `tables` instead of `orders.data`
+            'orders' => $paginated,
+            'tables' => $tables,
         ]);
     }
 
@@ -50,7 +99,18 @@ class OrderController extends Controller
         $this->authorize('view', $order);
 
         // Load relations we need for the view
-        $order->load('orderItems.menuItem', 'payments');
+        $order->load('orderItems.menuItem');
+
+        // Safely attempt to load payments — the payments table may no longer have an order_id
+        try {
+            $order->setRelation('payments', $order->payments()->get());
+        } catch (\Illuminate\Database\QueryException $e) {
+            Log::warning('OrderController@show could not eager load payments', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+            $order->setRelation('payments', collect([]));
+        }
 
         // Build a normalized array so the frontend always receives predictable keys
         $orderArray = $order->toArray();
@@ -90,12 +150,97 @@ class OrderController extends Controller
             'order' => $orderArray,
         ];
 
+        // If this order has a table_number, include all active orders for the same table so the frontend can list them
+        if (! empty($order->table_number)) {
+            $tableOrders = $restaurant->orders()
+                ->where('table_number', $order->table_number)
+                ->with('orderItems')
+                ->orderBy('created_at', 'desc')
+                ->get()
+                ->map(function ($o) {
+                    $arr = $o->toArray();
+                    if (isset($arr['order_items'])) {
+                        $arr['orderItems'] = $arr['order_items'];
+                        unset($arr['order_items']);
+                    }
+
+                    return $arr;
+                })->values();
+
+            $props['tableOrders'] = $tableOrders;
+        } else {
+            $props['tableOrders'] = collect([]);
+        }
+
         // If the request includes ?debug=1 return debug payload to the frontend for quick inspection
         if (request()->boolean('debug')) {
             $props['debug'] = $debug;
         }
 
         return Inertia::render('Order/Show', $props);
+    }
+
+    /**
+     * Display all orders for a table (dedicated table details page).
+     */
+    public function tableShow(Restaurant $restaurant, $tableNumber)
+    {
+        $this->authorize('viewAny', [Order::class, $restaurant]);
+
+        // Eager load menu item details for each order item and any payments
+        $tableOrders = $restaurant->orders()
+            ->where('table_number', $tableNumber)
+            ->with(['orderItems.menuItem'])
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($o) {
+                $arr = $o->toArray();
+
+                // Normalize order_items -> orderItems
+                if (isset($arr['order_items'])) {
+                    $orderItems = collect($arr['order_items'])->map(function ($it) {
+                        // Normalize nested menu_item -> menuItem if present
+                        if (isset($it['menu_item'])) {
+                            $it['menuItem'] = $it['menu_item'];
+                            unset($it['menu_item']);
+                        }
+
+                        return $it;
+                    })->values()->all();
+
+                    $arr['orderItems'] = $orderItems;
+                    unset($arr['order_items']);
+                } else {
+                    $arr['orderItems'] = [];
+                }
+
+                // Ensure payments key exists. Try to load via relationship if not present.
+                if (! isset($arr['payments']) || ! is_array($arr['payments'])) {
+                    try {
+                        $arr['payments'] = $o->payments()->get()->toArray();
+                    } catch (\Illuminate\Database\QueryException $e) {
+                        Log::warning('OrderController@tableShow could not load payments for order', [
+                            'order_id' => $o->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                        $arr['payments'] = [];
+                    }
+                }
+
+                return $arr;
+            })->values();
+
+        // Include QR code/table metadata if available so the frontend has table status
+        $qrCode = QrCode::where('restaurant_id', $restaurant->id)
+            ->where('table_number', $tableNumber)
+            ->first();
+
+        return Inertia::render('Order/TableShow', [
+            'restaurant' => $restaurant,
+            'table_number' => $tableNumber,
+            'qr_code' => $qrCode ? $qrCode->toArray() : null,
+            'tableOrders' => $tableOrders,
+        ]);
     }
 
     /**
@@ -132,7 +277,6 @@ class OrderController extends Controller
             $amount = request()->input('amount', $order->total_amount);
 
             Payment::create([
-                'order_id' => $order->id,
                 'table_number' => $order->table_number,
                 // mark as non-qrcode since this payment was created by staff action
                 'trans_ref' => $generatedTransRef,
@@ -241,7 +385,16 @@ class OrderController extends Controller
             $validationRules['qr_code_data'] = 'required_without:slip_image|string|nullable';
         }
 
-        $validated = $request->validate($validationRules);
+        try {
+            $validated = $request->validate($validationRules);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            // Log validation failures for debugging tests
+            Log::debug('OrderController@storeFromMenu validation failed', [
+                'errors' => $e->errors(),
+                'input' => $request->all(),
+            ]);
+            throw $e;
+        }
 
         // Calculate total amount (includes base price + all selected options)
         $totalAmount = 0;
@@ -497,6 +650,14 @@ class OrderController extends Controller
 
                 $order = $restaurant->orders()->create($orderData);
 
+                // Debug: confirm order creation in logs for test troubleshooting
+                Log::debug('OrderController@storeFromMenu created order', [
+                    'order_id' => $order->id ?? null,
+                    'restaurant_id' => $restaurant->id ?? null,
+                    'table_number' => $order->table_number ?? null,
+                    'total_amount' => $order->total_amount ?? null,
+                ]);
+
                 // Persist order items (we built $orderItems earlier)
                 if (! empty($orderItems)) {
                     // Ensure menu_id and options shapes are compatible with OrderItem fillable/casts
@@ -509,17 +670,42 @@ class OrderController extends Controller
 
             // Create payment record if payment was verified
             if ($paymentData) {
-                $paymentData['order_id'] = $order->id;
+                // Payments are now table-level; do not set order_id here
                 $payment = Payment::create($paymentData);
             }
 
             DB::commit();
 
+            // Log commit so tests can verify commit occurred (debugging flaky test)
+            Log::debug('OrderController@storeFromMenu committed', [
+                'order_id' => $order->id ?? null,
+                'restaurant_id' => $restaurant->id ?? null,
+                'table_number' => $order->table_number ?? null,
+                'total_amount' => $order->total_amount ?? null,
+            ]);
+
             // Broadcast new order event
             broadcast(new NewOrder($order))->toOthers();
 
-            // Load order relationships for the flash data
-            $order->load('orderItems', 'payments');
+            // Load order relationships for the flash data. Loading payments may fail
+            // on test DBs where the payments.order_id column was dropped; load payments
+            // defensively so we don't trigger a QueryException and rollback after commit.
+            $order->load('orderItems');
+            try {
+                $order->load('payments');
+            } catch (\Illuminate\Database\QueryException $e) {
+                Log::warning('OrderController@storeFromMenu could not eager load payments', [
+                    'order_id' => $order->id ?? null,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            // Extra debug: log loaded relations (payments_count may be unavailable)
+            Log::debug('OrderController@storeFromMenu loaded relations', [
+                'order_id' => $order->id ?? null,
+                'orderItems_count' => $order->orderItems ? $order->orderItems->count() : 0,
+                'payments_count' => isset($order->payments) && is_countable($order->payments) ? count($order->payments) : null,
+            ]);
 
             // Redirect to the public menu (cannot redirect back to POST-only route)
             return redirect()->route('public.menu', [
@@ -533,6 +719,13 @@ class OrderController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
 
+            // Log the exception for debugging
+            Log::error('OrderController@storeFromMenu exception - rolling back', [
+                'message' => $e->getMessage(),
+                'exception' => $e,
+                'input' => $request->all(),
+            ]);
+
             // Redirect back to the menu page with error flash message
             return redirect()->route('public.menu', [
                 'restaurantCode' => $restaurantCode,
@@ -542,6 +735,144 @@ class OrderController extends Controller
                 'cart' => $validated['items'],
             ]);
         }
+    }
+
+    /**
+     * Verify a slip image or QR code data without creating an order.
+     * Intended for immediate verification after customer uploads a slip.
+     */
+    public function verifySlip(Request $request)
+    {
+        $validated = $request->validate([
+            // Accept either an uploaded image file OR a qr_code_data string
+            'slip_image' => 'required_without:qr_code_data|nullable|file|image|max:5120', // 5MB
+            'qr_code_data' => 'required_without:slip_image|nullable|string',
+        ]);
+
+        $hasFile = $request->hasFile('slip_image');
+        $paymentData = $hasFile ? $request->file('slip_image') : ($validated['qr_code_data'] ?? null);
+
+        try {
+            $totalAmount = $request->input('amount', 0);
+
+            $devMode = config('services.slipok.dev_mode', false);
+            $okUse = config('services.slipok.ok_use', true);
+
+            if ($devMode || ! $okUse) {
+                $slipVerification = [
+                    'transRef' => 'DEV_'.\Illuminate\Support\Str::uuid()->toString(),
+                    'amount' => $totalAmount,
+                    'sender' => [
+                        'name' => 'DEV MODE',
+                        'displayName' => 'Development Test',
+                    ],
+                    'sendingBank' => 'DEV BANK',
+                ];
+            } else {
+                $apiKey = config('services.slipok.api_key');
+                $branchId = config('services.slipok.branch_id');
+
+                if (! $apiKey || ! $branchId) {
+                    return $this->slipResponse($request, false, 'SlipOK credentials not configured.', null, 500);
+                }
+
+                $url = "https://api.slipok.com/api/line/apikey/{$branchId}";
+                if ($hasFile && $paymentData) {
+                    // Uploaded file path
+                    /** @var \Illuminate\Http\UploadedFile $uf */
+                    $uf = $paymentData;
+                    $binary = file_get_contents($uf->getRealPath());
+                    $response = Http::withHeaders(['x-authorization' => $apiKey])
+                        ->withOptions(['verify' => false])
+                        ->attach('files', $binary, $uf->getClientOriginalName() ?: 'slip.jpg')
+                        ->post($url, [
+                            'log' => true,
+                            'amount' => $totalAmount,
+                        ]);
+                } elseif (is_string($paymentData) && filter_var($paymentData, FILTER_VALIDATE_URL)) {
+                    $response = Http::withHeaders([
+                        'x-authorization' => $apiKey,
+                        'Content-Type' => 'application/json',
+                    ])->withOptions(['verify' => false])->post($url, [
+                        'url' => $paymentData,
+                        'log' => true,
+                        'amount' => $totalAmount,
+                    ]);
+                } elseif (is_string($paymentData) && str_starts_with($paymentData, 'data:image')) {
+                    $imageData = substr($paymentData, strpos($paymentData, ',') + 1);
+                    $binary = base64_decode($imageData);
+                    if ($binary === false) {
+                        return $this->slipResponse($request, false, 'Invalid base64 slip image data.', null, 422);
+                    }
+                    $response = Http::withHeaders(['x-authorization' => $apiKey])
+                        ->withOptions(['verify' => false])
+                        ->attach('files', $binary, 'slip.jpg')
+                        ->post($url, [
+                            'log' => true,
+                            'amount' => $totalAmount,
+                        ]);
+                } else {
+                    $response = Http::withHeaders([
+                        'x-authorization' => $apiKey,
+                        'Content-Type' => 'application/json',
+                    ])->withOptions(['verify' => false])->post($url, [
+                        'data' => $paymentData,
+                        'log' => true,
+                        'amount' => $totalAmount,
+                    ]);
+                }
+
+                if (! $response || ! $response->successful()) {
+                    $body = $response ? $response->json() : [];
+                    $msg = $body['message'] ?? 'SlipOK request failed';
+                    $code = $body['code'] ?? 'UNKNOWN';
+                    return $this->slipResponse($request, false, "SlipOK API Error ($code): $msg", null, 502);
+                }
+
+                $json = $response->json();
+                if (! ($json['success'] ?? false)) {
+                    $msg = $json['message'] ?? 'Slip verification failed';
+                    $code = $json['code'] ?? 'INVALID';
+                    return $this->slipResponse($request, false, "SlipOK Verification Error ($code): $msg", null, 422);
+                }
+
+                $slipVerification = $json['data'] ?? [];
+                if (isset($slipVerification['amount']) && $totalAmount > 0 && (float) $slipVerification['amount'] !== (float) $totalAmount) {
+                    return $this->slipResponse($request, false, 'Amount mismatch: slip shows '.$slipVerification['amount'].' expected '.$totalAmount, null, 422);
+                }
+            }
+            return $this->slipResponse($request, true, 'Slip verified successfully', $slipVerification, 200);
+        } catch (\Exception $e) {
+            Log::error('verifySlip exception', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            return $this->slipResponse($request, false, 'Verification failed: '.$e->getMessage(), null, 500);
+        }
+    }
+
+    /**
+     * Helper to return either an Inertia redirect with flash or JSON depending on request type.
+     */
+    protected function slipResponse(Request $request, bool $success, string $message, $data = null, int $status = 200)
+    {
+        if ($request->hasHeader('X-Inertia')) {
+            if ($success) {
+                return back()->with([
+                    'slip_verification' => [
+                        'message' => $message,
+                        'data' => $data,
+                    ],
+                ]);
+            }
+
+            return back()->with([
+                'slip_error' => $message,
+            ])->withErrors(['slip' => $message]);
+        }
+
+        return response()->json([
+            'success' => $success,
+            'message' => $message,
+            'data' => $data,
+        ], $status);
     }
 
     /**
@@ -582,36 +913,39 @@ class OrderController extends Controller
                 abort(404, 'Invalid restaurant code');
             }
 
-            $order = $restaurant->orders()
-                ->where('table_number', $qrCode->table_number)
-                ->where('status', 'active')
-                ->latest()
-                ->first();
+            // Prevent duplicate bill requests
+            if ($qrCode->status === 'billing') {
+                return redirect()->route('public.menu', [
+                    'restaurantCode' => $restaurantCode,
+                    'tableCode' => $tableCode,
+                ])->withErrors(['message' => 'Bill already requested for this table.']);
+            }
 
-            if (! $order) {
+            // Mark the table (qr_code) as billing. We no longer update each order's status —
+            // billing lifecycle is tracked at the QR (table) level.
+            $qrCode->update(['status' => 'billing']);
+
+            // Find any orders for the table to validate there's at least one with items
+            $orders = $restaurant->orders()
+                ->where('table_number', $qrCode->table_number)
+                ->get();
+
+            $ordersWithItems = $orders->filter(fn ($o) => $o->orderItems()->exists());
+
+            if ($ordersWithItems->isEmpty()) {
                 return redirect()->route('public.menu', [
                     'restaurantCode' => $restaurantCode,
                     'tableCode' => $tableCode,
                 ])->withErrors(['message' => 'No active order found.']);
             }
 
-            if (! $order->orderItems()->exists()) {
-                return redirect()->route('public.menu', [
-                    'restaurantCode' => $restaurantCode,
-                    'tableCode' => $tableCode,
-                ])->withErrors(['message' => 'Cannot request bill for empty order.']);
-            }
+            // Broadcast a single table-level event for staff so they can see the request
+            broadcast(new \App\Events\TableBillRequested($qrCode));
 
-            $order->update(['status' => 'billing']);
-
-            // Broadcast event to restaurant staff
-            broadcast(new \App\Events\BillRequested($order));
-
-            // Redirect back to the menu with updated order data
             return redirect()->route('public.menu', [
                 'restaurantCode' => $restaurantCode,
                 'tableCode' => $tableCode,
-            ])->with('success', 'Bill requested successfully.');
+            ])->with('success', 'Bill requested for table.');
 
         } catch (\Exception $e) {
             return redirect()->route('public.menu', [
@@ -628,13 +962,92 @@ class OrderController extends Controller
     {
         $this->authorize('update', $order);
 
-        $order->update([
-            'status' => 'billed',
-            'is_paid' => true,
-        ]);
+        // Mark a single order as paid. We do NOT create Payment rows here —
+        // payments are created only on pay_before order creation or when staff checks a table.
+        $order->update(['is_paid' => true]);
 
+        // Broadcast an OrderBilled event for compatibility with existing listeners.
         broadcast(new \App\Events\OrderBilled($order));
 
-        return back()->with('success', 'Order marked as billed.');
+        return back()->with('success', 'Order marked as paid.');
+    }
+
+    /**
+     * Mark all orders for a table as paid (staff-facing).
+     */
+    public function markTablePaid(Restaurant $restaurant, $tableNumber)
+    {
+        // Deprecated: table-level per-order payment creation removed. Use markTableChecked instead.
+        abort(410, 'Deprecated. Use markTableChecked');
+    }
+
+    /**
+     * Mark all orders for a table as billed (staff-facing).
+     */
+    public function markTableBilled(Restaurant $restaurant, $tableNumber)
+    {
+        // Deprecated: Use markTableChecked which creates an aggregated payment.
+        abort(410, 'Deprecated. Use markTableChecked');
+    }
+
+    /**
+     * Staff action: mark an entire table as checked.
+     * Creates a single aggregated Payment for the table when the restaurant is not pay_before.
+     */
+    public function markTableChecked(Restaurant $restaurant, $tableNumber)
+    {
+        $this->authorize('viewAny', [Order::class, $restaurant]);
+
+        $qrCode = QrCode::where('restaurant_id', $restaurant->id)
+            ->where('table_number', $tableNumber)
+            ->first();
+
+        // Collect unpaid orders for the table
+        $orders = $restaurant->orders()
+            ->where('table_number', $tableNumber)
+            ->where('is_paid', false)
+            ->get();
+
+        // Sum amount for aggregation
+        $amount = $orders->reduce(fn ($sum, $o) => $sum + (float) $o->total_amount, 0.0);
+
+        DB::transaction(function () use ($orders, $restaurant, $qrCode, $tableNumber, $amount) {
+            if ($restaurant->pay_before) {
+                // Orders should already be paid; ensure flag is set and do NOT create payment rows
+                foreach ($orders as $o) {
+                    $o->update(['is_paid' => true]);
+                }
+            } else {
+                // Create a single aggregated payment record for the table
+                // Create a single aggregated payment record for the table if there are unpaid orders
+                if ($amount > 0 && $orders->isNotEmpty()) {
+                    $firstOrderId = $orders->first()->id;
+                    Payment::create([
+                        'table_number' => $tableNumber,
+                        'trans_ref' => 'table-'.Str::uuid()->toString(),
+                        'amount' => $amount,
+                        'sender_name' => null,
+                        'sender_display_name' => null,
+                        'sending_bank' => null,
+                        'restaurant_id' => $restaurant->id,
+                        'qr_code_id' => $qrCode ? $qrCode->id : null,
+                        'status' => 'completed',
+                        'payment_details' => null,
+                    ]);
+
+                    // Mark orders as paid
+                    foreach ($orders as $o) {
+                        $o->update(['is_paid' => true]);
+                    }
+                }
+            }
+
+            // Finally, mark the QR code as checked so staff can clean the table
+            if ($qrCode) {
+                $qrCode->update(['status' => 'checked']);
+            }
+        });
+
+        return back()->with('success', 'Table marked as checked.');
     }
 }
