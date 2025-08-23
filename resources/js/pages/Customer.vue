@@ -193,24 +193,11 @@ const qrStatus = computed(() => {
     return (page.props as any).qr_code?.status ?? (props.table as any)?.qr_code?.status ?? (page.props as any).table?.qr_code?.status ?? null;
 });
 
-const isBilling = computed(() => qrStatus.value === 'billing');
-
-// Get button text based on payment method
-const getBillButtonText = () => {
-    if (!props.restaurant.payBefore) {
-        return 'Request Bill';
-    }
-    return 'Request Bill (Paid)';
-};
-
-// Handle bill request
-const handleRequestBill = async () => {
-    try {
-        await cartStore.requestBill();
-    } catch (error) {
-        console.error('Failed to request bill:', error);
-    }
-};
+// Treat both 'billing' and 'checked' QR statuses as billing states
+const isBilling = computed(() => {
+    const status = qrStatus.value ?? '';
+    return ['billing', 'checked'].includes(status);
+});
 
 // Methods
 const openOptionModal = (item: MenuItem) => {
@@ -239,8 +226,6 @@ const addToCart = (item: MenuItem) => {
 const formatPrice = (price: number) => {
     return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB' }).format(price);
 };
-
-
 
 // Color gradients to use for cards. We keep a short palette and pick by index so cards are colorful.
 const gradients = [

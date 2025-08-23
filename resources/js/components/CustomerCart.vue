@@ -100,6 +100,8 @@ const submitOrderInternal = () => {
             cartStore.clearCart();
             showPaymentQR.value = false;
             removeSlip();
+            // Allow subsequent orders in the same session
+            orderAutoSubmitted.value = false;
             router.reload({ only: ['orderHistory'] });
             if (props.orderHistory && Array.isArray(props.orderHistory)) {
                 const hist: any[] = props.orderHistory.map((o) => ({ ...o, status: o.status || (o.is_paid ? 'completed' : 'active') }));
@@ -202,6 +204,8 @@ const removeSlip = () => {
     slipFileName.value = '';
     slipForm.slip_image = null;
     slipVerifyForm.slip_image = null;
+    // Ensure we can auto-submit again on next attempt
+    orderAutoSubmitted.value = false;
 };
 
 // Calculate total price for an item. Prefer the persisted `item.price` (it already includes option extras).
@@ -316,6 +320,8 @@ const submitOrder = () => {
             return;
         }
 
+        // Opening the QR flow should reset previous submission guard
+        orderAutoSubmitted.value = false;
         showPaymentQR.value = true;
         return;
     }

@@ -381,8 +381,9 @@ class OrderController extends Controller
 
         // Only require payment verification for restaurants with pay_before enabled
         if ($restaurant->pay_before) {
-            $validationRules['slip_image'] = 'required_without:qr_code_data|string|nullable';
-            $validationRules['qr_code_data'] = 'required_without:slip_image|string|nullable';
+            // Accept an uploaded image file OR a qr_code_data string (aligns with verifySlip)
+            $validationRules['slip_image'] = 'required_without:qr_code_data|nullable|file|image|max:5120'; // 5MB
+            $validationRules['qr_code_data'] = 'required_without:slip_image|nullable|string';
         }
 
         try {
@@ -501,9 +502,11 @@ class OrderController extends Controller
 
         if ($restaurant->pay_before) {
             // Only verify payment if payment data is provided
-            if (isset($validated['slip_image']) || isset($validated['qr_code_data'])) {
+        if ($request->hasFile('slip_image') || isset($validated['slip_image']) || isset($validated['qr_code_data'])) {
                 try {
-                    $paymentData = $validated['slip_image'] ?? $validated['qr_code_data'];
+            // Prefer uploaded file when present; otherwise use string payload (url/base64/qr text)
+            $hasFile = $request->hasFile('slip_image');
+            $paymentData = $hasFile ? $request->file('slip_image') : ($validated['slip_image'] ?? $validated['qr_code_data']);
 
                     // Check if we're in development mode
                     $devMode = config('services.slipok.dev_mode', false);
@@ -533,7 +536,19 @@ class OrderController extends Controller
                         $url = "https://api.slipok.com/api/line/apikey/{$branchId}";
                         $response = null;
 
-                        if (filter_var($paymentData, FILTER_VALIDATE_URL)) {
+                        if ($hasFile && $paymentData instanceof \Illuminate\Http\UploadedFile) {
+                            // Uploaded image file
+                            /** @var \Illuminate\Http\UploadedFile $uf */
+                            $uf = $paymentData;
+                            $binary = file_get_contents($uf->getRealPath());
+                            $response = Http::withHeaders(['x-authorization' => $apiKey])
+                                ->withOptions(['verify' => false]) // TODO: enable proper SSL in production
+                                ->attach('files', $binary, $uf->getClientOriginalName() ?: 'slip.jpg')
+                                ->post($url, [
+                                    'log' => true,
+                                    'amount' => $totalAmount,
+                                ]);
+                        } elseif (is_string($paymentData) && filter_var($paymentData, FILTER_VALIDATE_URL)) {
                             // Remote image URL
                             $response = Http::withHeaders([
                                 'x-authorization' => $apiKey,
@@ -544,7 +559,7 @@ class OrderController extends Controller
                                     'log' => true,
                                     'amount' => $totalAmount,
                                 ]);
-                        } elseif (str_starts_with($paymentData, 'data:image')) {
+                        } elseif (is_string($paymentData) && str_starts_with($paymentData, 'data:image')) {
                             // Base64 data URL image - convert to file
                             $imageData = substr($paymentData, strpos($paymentData, ',') + 1);
                             $binary = base64_decode($imageData);
