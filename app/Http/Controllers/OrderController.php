@@ -676,6 +676,35 @@ class OrderController extends Controller
     }
 
     /**
+     * Public action: customer taps "Check" to mark their table QR status as checked.
+     */
+    public function publicCheck(Request $request)
+    {
+        $validated = $request->validate([
+            'restaurantCode' => 'required',
+            'tableCode' => 'required',
+        ]);
+
+        $restaurant = Restaurant::find($validated['restaurantCode']);
+        if (! $restaurant) {
+            return back()->withErrors(['message' => 'Restaurant not found.']);
+        }
+
+        $qrCode = QrCode::where('restaurant_id', $restaurant->id)
+            ->where('code', $validated['tableCode'])
+            ->orderBy('created_at', 'desc')
+            ->first();
+
+        if (! $qrCode) {
+            return back()->withErrors(['message' => 'Table not found.']);
+        }
+
+        $qrCode->update(['status' => 'checked']);
+
+        return back()->with('success', 'Table checked.');
+    }
+
+    /**
      * Perform slip verification (DEV bypass supported). Returns verification array on success or throws on failure. Also create payment record
      * @param  Request  $request  used to inspect headers/context
      * @param  mixed    $payload  UploadedFile|string (url, base64 data url, raw QR text)

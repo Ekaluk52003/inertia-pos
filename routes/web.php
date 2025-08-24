@@ -110,6 +110,9 @@ Route::prefix('public')->group(function () {
 
     // Slip verification endpoint (verify uploaded slip without creating an order)
     Route::post('slip/verify', [OrderController::class, 'verifySlip'])->name('public.slip.verify');
+
+    // Public action to mark the table as checked (customer confirms table is cleared)
+    Route::post('table/check', [OrderController::class, 'publicCheck'])->name('public.table.check');
 });
 
 require __DIR__.'/settings.php';

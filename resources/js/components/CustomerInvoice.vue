@@ -45,6 +45,8 @@ const slipForm = useForm({
     tableCode: props.table?.code ?? null,
 });
 
+// this will call verifySlip in order controller.
+// we will not create order again for this case as this invoice component will show when resturant pay_before == false meaning that customer can place order before pay
 const handleSlipUpload = (e: Event) => {
     const input = e.target as HTMLInputElement | null;
     const file = input?.files?.[0] ?? null;
@@ -98,6 +100,44 @@ const handleSlipUpload = (e: Event) => {
 
             // Refresh current page props so invoice/orders reflect new is_paid and QR status
             if (slipStatus.value === 'success') {
+                // Optimistically mark current table's orders as paid so UI reflects immediately
+                try {
+                    // Mark active order
+                    if (cartStore.activeOrder) {
+                        cartStore.activeOrder.is_paid = true;
+                        if (cartStore.activeOrder.qr_code) {
+                            cartStore.activeOrder.qr_code.status = 'checked';
+                        }
+                    }
+
+                    // Mark order history for this table as paid
+                    if (Array.isArray(cartStore.orderHistory)) {
+                        const updated = cartStore.orderHistory.map((o: any) => {
+                            if (!o) return o;
+                            const sameTable =
+                                o.table_number === props.table.number ||
+                                o.table_code === props.table.code ||
+                                o.qr_code?.table_code === props.table.code;
+                            if (sameTable) {
+                                return {
+                                    ...o,
+                                    is_paid: true,
+                                    qr_code: o.qr_code ? { ...o.qr_code, status: 'checked' } : o.qr_code,
+                                };
+                            }
+                            return o;
+                        });
+                        // Prefer store setter if available to ensure reactivity
+                        if (typeof (cartStore as any).setOrderHistory === 'function') {
+                            (cartStore as any).setOrderHistory(updated);
+                        } else {
+                            (cartStore as any).orderHistory = updated;
+                        }
+                    }
+                } catch (e) {
+                    // noop – optimistic update best-effort
+                }
+
                 router.reload();
             }
         },
@@ -394,10 +434,12 @@ const orderTotal = (ord: any): number => {
 
                 <!-- Payment confirmation message removed: invoice only shows order status per-order -->
 
-                <!-- Footer message -->
-                <div class="mt-8 text-center text-sm text-muted-foreground">
-                    <p>Thank you for dining with us!</p>
-                    <p class="mt-1">{{ restaurant.name }}</p>
+                <!-- Footer actions/messages -->
+                <div class="mt-8 flex flex-col items-center gap-3 text-center">
+                    <div class="text-sm text-muted-foreground">
+                        <p>Thank you for dining with us!</p>
+                        <p class="mt-1">{{ restaurant.name }}</p>
+                    </div>
                 </div>
             </CardContent>
         </Card>

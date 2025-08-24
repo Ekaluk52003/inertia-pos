@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import CustomerLayout from '@/layouts/customerLayout.vue';
 import { useCartStore } from '@/stores/cartStore';
-import { Head, usePage } from '@inertiajs/vue3';
+import { Head, router, usePage } from '@inertiajs/vue3';
 import { AlertCircle, CheckCircle2, ShoppingCart, X, ZoomIn } from 'lucide-vue-next';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
@@ -119,6 +119,34 @@ interface MenuItemOption {
 // Local state
 const activeCategory = ref(props.categories[0] || '');
 
+// Allow user to dismiss invoice and continue ordering after payment
+const skipInvoice = ref(false);
+const continueToOrder = () => {
+    skipInvoice.value = true;
+};
+
+// Bring back the invoice and check button when needed
+const showInvoice = () => {
+    skipInvoice.value = false;
+};
+
+// Locally track that the table was checked to instantly hide actions before reload completes
+const localChecked = ref(false);
+const checkTable = () => {
+    router.post(
+        route('public.table.check'),
+        { restaurantCode: props.restaurant.id, tableCode: props.table.code },
+        {
+            preserveScroll: true,
+            onSuccess: () => {
+                localChecked.value = true;
+                // Refresh props so qrStatus updates to 'checked'
+                router.reload();
+            },
+        },
+    );
+};
+
 // Set active order and order history in cart store
 if (props.activeOrder) {
     cartStore.setActiveOrder(props.activeOrder);
@@ -199,9 +227,12 @@ const isBilling = computed(() => {
     return ['billing', 'checked'].includes(status);
 });
 
+// Block ordering when in billing state unless user explicitly continues
+const orderingBlocked = computed(() => isBilling.value && !skipInvoice.value);
+
 // Methods
 const openOptionModal = (item: MenuItem) => {
-    if (isBilling.value) return;
+    if (orderingBlocked.value) return;
     // Check if the item has valid options with choices or values
     if (!hasValidOptions(item)) {
         cartStore.addToCart(item as any);
@@ -213,7 +244,7 @@ const openOptionModal = (item: MenuItem) => {
 };
 
 const addToCart = (item: MenuItem) => {
-    if (isBilling.value) return;
+    if (orderingBlocked.value) return;
     // Check if the item has valid options with choices
     if (hasValidOptions(item)) {
         openOptionModal(item);
@@ -296,7 +327,7 @@ const scrollToCategory = (category: string) => {
         </div>
 
         <!-- Invoice View (when bill is requested or table is in billing state) -->
-        <div v-if="cartStore.shouldShowInvoice || isBilling" class="flex h-full flex-1 flex-col p-4">
+        <div v-if="(cartStore.shouldShowInvoice || isBilling) && !skipInvoice" class="flex h-full flex-1 flex-col p-4">
             <CustomerInvoice
                 :restaurant="restaurant"
                 :table="table"
@@ -304,9 +335,25 @@ const scrollToCategory = (category: string) => {
                 :show-payment-qr="cartStore.shouldShowPaymentQR || isBilling"
             />
         </div>
+        <!-- Check button (always available when showing invoice area) -->
+        <div
+            v-if="(cartStore.shouldShowInvoice || isBilling) && !skipInvoice && restaurant.payBefore && qrStatus !== 'checked' && !localChecked"
+            class="flex flex-1 flex-col items-center gap-3 p-4"
+        >
+            <Button variant="outline" @click="checkTable"> Check </Button>
+        </div>
+        <div
+            v-if="cartStore.shouldShowInvoice && !skipInvoice && restaurant.payBefore && qrStatus !== 'checked' && !localChecked"
+            class="flex flex-1 flex-col items-center gap-3 p-4"
+        >
+            <Button variant="default" @click="continueToOrder">Continue to order</Button>
+        </div>
 
         <!-- Menu View (when order is active) - hidden when table is in billing state -->
-        <div v-if="cartStore.shouldShowMenu && !isBilling" class="flex h-full flex-1 flex-col gap-4 overflow-x-auto p-4 pb-24 md:pb-4">
+        <div
+            v-if="(cartStore.shouldShowMenu && !isBilling) || (restaurant.payBefore && skipInvoice)"
+            class="flex h-full flex-1 flex-col gap-4 overflow-x-auto p-4 pb-24 md:pb-4"
+        >
             <!-- Restaurant Header -->
             <div class="py-4 text-center">
                 <h1 class="text-2xl font-bold">{{ restaurant.name }}</h1>
@@ -376,8 +423,10 @@ const scrollToCategory = (category: string) => {
                                     variant="default"
                                     @click="addToCart(item)"
                                     class="max-w-xs flex-1 border-white/10 bg-white/10 px-3 py-1 text-sm text-white hover:bg-white/20"
-                                    :title="isBilling ? 'Ordering disabled while billing' : hasValidOptions(item) ? 'Select options' : 'Add to cart'"
-                                    :disabled="isBilling"
+                                    :title="
+                                        orderingBlocked ? 'Ordering disabled while billing' : hasValidOptions(item) ? 'Select options' : 'Add to cart'
+                                    "
+                                    :disabled="orderingBlocked"
                                 >
                                     <ShoppingCart class="mr-2 h-4 w-4" />
                                     <span>Add</span>
@@ -402,7 +451,7 @@ const scrollToCategory = (category: string) => {
 
         <!-- Cart Component (only show when menu is active) -->
         <CustomerCart
-            v-if="cartStore.shouldShowMenu && !isBilling"
+            v-if="(cartStore.shouldShowMenu && !isBilling) || (restaurant.payBefore && skipInvoice)"
             :restaurant-id="props.restaurant.id"
             :table-code="props.table.code"
             :pay-before="props.restaurant.payBefore"
@@ -410,6 +459,11 @@ const scrollToCategory = (category: string) => {
             :active-order="props.activeOrder"
             :order-history="props.orderHistory"
         />
+
+        <!-- Floating button to reopen invoice (pay-before only) -->
+        <div v-if="restaurant.payBefore && skipInvoice && qrStatus !== 'checked' && !localChecked" class="fixed right-4 top-20 z-50">
+            <Button variant="secondary" size="lg" class="shadow-md" @click="showInvoice">Show invoice</Button>
+        </div>
     </CustomerLayout>
 
     <!-- Image modal -->
@@ -435,7 +489,3 @@ const scrollToCategory = (category: string) => {
 
     <!-- Option Selection Modal is now handled by the cart store and CustomerCart component -->
 </template>
-
-<style scoped>
-/* Add any custom styles here */
-</style>
