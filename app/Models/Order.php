@@ -21,7 +21,7 @@ class Order extends Model
         'code',
         'total_amount',
         'is_paid',
-        'status', // now only 'paid' or 'unpaid'
+    // 'status' removed: use is_paid and qrCode->status instead
         'customer_notes',
     ];
 
@@ -33,7 +33,6 @@ class Order extends Model
     protected $casts = [
         'total_amount' => 'decimal:2',
         'is_paid' => 'boolean',
-        'status' => 'string',
     ];
 
     /**
@@ -41,7 +40,7 @@ class Order extends Model
      */
     public function isPaid(): bool
     {
-        return $this->status === 'paid';
+    return (bool) $this->is_paid;
     }
 
     /**
@@ -49,7 +48,7 @@ class Order extends Model
      */
     public function isUnpaid(): bool
     {
-        return $this->status === 'unpaid';
+    return ! $this->is_paid;
     }
 
     /**
@@ -59,42 +58,63 @@ class Order extends Model
      */
     public function isActive(): bool
     {
-        return $this->status === 'active';
+        // An order is considered active when it hasn't been paid and the
+        // table/qr lifecycle is not in a terminal state. Prefer the QR code
+        // lifecycle where available.
+        if ($this->qrCode && $this->qrCode->status) {
+            return in_array($this->qrCode->status, ['active', 'open', 'pending']);
+        }
+
+        return ! $this->is_paid;
     }
 
     public function isBilling(): bool
     {
-        return $this->status === 'billing';
+        if ($this->qrCode && $this->qrCode->status) {
+            return $this->qrCode->status === 'billing';
+        }
+
+        // Fallback: consider billing when there is an unpaid order with a bill
+        return ! $this->is_paid && $this->bill()->exists();
     }
 
     public function isBilled(): bool
     {
-        return $this->status === 'billed';
+        if ($this->qrCode && $this->qrCode->status) {
+            return $this->qrCode->status === 'billed';
+        }
+
+        return (bool) $this->is_paid;
     }
 
     public function isCompleted(): bool
     {
-        return $this->status === 'completed';
+        // Completed means paid or explicitly completed via qr lifecycle
+        if ($this->qrCode && $this->qrCode->status) {
+            return in_array($this->qrCode->status, ['completed', 'checked', 'closed', 'billed']);
+        }
+
+        return (bool) $this->is_paid;
     }
 
     public function canRequestBill(): bool
     {
-        return $this->status === 'active' && $this->orderItems()->exists();
+        return $this->isActive() && $this->orderItems()->exists();
     }
 
     public function shouldShowBillButton(): bool
     {
-        return $this->status === 'active';
+        return $this->isActive();
     }
 
     public function shouldShowInvoice(): bool
     {
-        return in_array($this->status, ['billing', 'billed', 'completed']);
+        return $this->isBilling() || $this->isBilled() || $this->isCompleted();
     }
 
     public function shouldShowPaymentQR(): bool
     {
-        return $this->status === 'billing' && ! $this->restaurant->pay_before;
+        return $this->isBilling() && ! $this->restaurant->pay_before;
     }
 
     /**

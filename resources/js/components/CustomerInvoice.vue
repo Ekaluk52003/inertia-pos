@@ -196,11 +196,10 @@ const statusColor = computed(() => {
 
 // Determine whether any payment record exists for the orders shown on the invoice.
 const anyPaymentRecorded = computed(() => {
-    // Check ordersForInvoice for explicit paid flags, payments array, or status string
+    // Check ordersForInvoice for explicit paid flags, payments array, or payment_count
     return ordersForInvoice.value.some((o: any) => {
         if (!o) return false;
         if (o.is_paid) return true;
-        if (o.status && o.status === 'paid') return true;
         if (o.payments && Array.isArray(o.payments) && o.payments.length > 0) return true;
         if (o.payment_count && Number(o.payment_count) > 0) return true;
         return false;
@@ -210,17 +209,22 @@ const anyPaymentRecorded = computed(() => {
 // Build list of orders to include on the invoice: include the activeOrder if present
 // and any orders from orderHistory that are in billing/billed/active/completed states.
 const ordersForInvoice = computed(() => {
+    // Include orders that are in billing/billed/completed lifecycle according to qr_code or have items
     const statuses = ['billing', 'billed', 'completed', 'active'];
     const orders: any[] = [];
 
-    if (cartStore.activeOrder && statuses.includes(cartStore.activeOrder.status)) {
+    if (
+        cartStore.activeOrder &&
+        (cartStore.activeOrder.is_paid || (cartStore.activeOrder.qr_code && statuses.includes(cartStore.activeOrder.qr_code.status || '')))
+    ) {
         orders.push(cartStore.activeOrder);
     }
 
     if (cartStore.orderHistory && Array.isArray(cartStore.orderHistory)) {
         cartStore.orderHistory.forEach((o: any) => {
-            if (o && statuses.includes(o.status)) {
-                // Avoid duplicate if it's the same as activeOrder
+            if (!o) return;
+            const qrStatus = o.qr_code?.status || '';
+            if (o.is_paid || (qrStatus && statuses.includes(qrStatus))) {
                 if (!cartStore.activeOrder || o.id !== cartStore.activeOrder.id) {
                     orders.push(o);
                 }

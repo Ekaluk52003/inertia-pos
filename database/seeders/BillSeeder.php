@@ -31,7 +31,6 @@ class BillSeeder extends Seeder
 
         // Get some unpaid orders to create pending bills
         $unpaidOrders = Order::where('is_paid', false)
-            ->where('status', '!=', 'pending')
             ->take(3)
             ->get();
 

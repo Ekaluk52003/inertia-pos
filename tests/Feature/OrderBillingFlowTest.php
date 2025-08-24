@@ -29,11 +29,10 @@ test('customer can request bill for active order', function () {
         'is_active' => true,
     ]);
 
-    // Create active order with items
+    // Create active (unpaid) order with items
     $order = Order::factory()->create([
         'restaurant_id' => $restaurant->id,
         'table_number' => $qrCode->table_number,
-        'status' => 'active',
         'total_amount' => 100.00,
         'is_paid' => false,
     ]);
@@ -75,11 +74,10 @@ test('cannot request bill for order without items', function () {
         'is_active' => true,
     ]);
 
-    // Create active order WITHOUT items
+    // Create active (unpaid) order WITHOUT items
     $order = Order::factory()->create([
         'restaurant_id' => $restaurant->id,
         'table_number' => $qrCode->table_number,
-        'status' => 'active',
         'total_amount' => 0.00,
         'is_paid' => false,
     ]);
@@ -90,9 +88,9 @@ test('cannot request bill for order without items', function () {
     $response->assertRedirect();
     $response->assertSessionHasErrors(['message']);
 
-    // Verify order status unchanged
+    // Verify order is still unpaid
     $order->refresh();
-    expect($order->status)->toBe('active');
+    expect($order->is_paid)->toBeFalse();
 });
 
 test('cannot request bill for non-active order', function () {
@@ -110,14 +108,16 @@ test('cannot request bill for non-active order', function () {
         'is_active' => true,
     ]);
 
-    // Create order that's already in billing status
+    // Create an unpaid order but mark the table as already in billing status
     $order = Order::factory()->create([
         'restaurant_id' => $restaurant->id,
         'table_number' => $qrCode->table_number,
-        'status' => 'billing',
         'total_amount' => 100.00,
         'is_paid' => false,
     ]);
+
+    // Mark the table/QR as billing so the request should be rejected
+    $qrCode->update(['status' => 'billing']);
 
     // Try to request bill
     $response = $this->post("/public/order/{$restaurant->id}/{$qrCode->code}/request-bill");
@@ -135,10 +135,9 @@ test('staff can mark order as billed', function () {
         'owner_id' => $user->id,
     ]);
 
-    // Create order in billing status
+    // Create an unpaid order (will be marked billed by staff)
     $order = Order::factory()->create([
         'restaurant_id' => $restaurant->id,
-        'status' => 'billing',
         'is_paid' => false,
     ]);
 
@@ -158,30 +157,27 @@ test('staff can mark order as billed', function () {
     });
 });
 
-test('order model status methods work correctly', function () {
-    $order = new Order(['status' => 'active']);
+test('order model lifecycle helpers work correctly with is_paid and qr_code status', function () {
+    // Unpaid order without a QR code is considered active
+    $order = new Order(['is_paid' => false]);
     expect($order->isActive())->toBeTrue();
     expect($order->isBilling())->toBeFalse();
     expect($order->isBilled())->toBeFalse();
     expect($order->isCompleted())->toBeFalse();
 
-    $order->status = 'billing';
+    // When marked paid the order is completed
+    $order->is_paid = true;
     expect($order->isActive())->toBeFalse();
-    expect($order->isBilling())->toBeTrue();
-    expect($order->isBilled())->toBeFalse();
-    expect($order->isCompleted())->toBeFalse();
-
-    $order->status = 'billed';
-    expect($order->isActive())->toBeFalse();
-    expect($order->isBilling())->toBeFalse();
-    expect($order->isBilled())->toBeTrue();
-    expect($order->isCompleted())->toBeFalse();
-
-    $order->status = 'completed';
-    expect($order->isActive())->toBeFalse();
-    expect($order->isBilling())->toBeFalse();
-    expect($order->isBilled())->toBeFalse();
     expect($order->isCompleted())->toBeTrue();
+
+    // If a QR code exists it takes precedence for lifecycle checks
+    $qr = new QrCode(['status' => 'billing']);
+    $order->is_paid = false;
+    $order->setRelation('qrCode', $qr);
+    expect($order->isBilling())->toBeTrue();
+
+    $qr->status = 'billed';
+    expect($order->isBilled())->toBeTrue();
 });
 
 test('new orders are created with active status', function () {
@@ -223,12 +219,12 @@ test('new orders are created with active status', function () {
 
     $response->assertRedirect();
 
-    // Verify order was created with active status
+    // Verify order was created and is unpaid (active in the new model)
     $order = Order::where('restaurant_id', $restaurant->id)
         ->where('table_number', $qrCode->table_number)
         ->latest()
         ->first();
 
     expect($order)->not->toBeNull();
-    expect($order->status)->toBe('active');
+    expect($order->is_paid)->toBeFalse();
 });

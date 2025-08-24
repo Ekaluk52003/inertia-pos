@@ -60,26 +60,6 @@ const lineTotal = (item: any): number => {
     return (base + extra) * qty;
 };
 
-const getStatusClass = (status: string) => {
-    switch (status) {
-        case 'pending':
-            return 'bg-yellow-100 text-yellow-800';
-        case 'cooking':
-            return 'bg-orange-100 text-orange-800';
-        case 'ready':
-            return 'bg-green-100 text-green-800';
-        case 'served':
-            return 'bg-blue-100 text-blue-800';
-        case 'active':
-            return 'bg-blue-100 text-blue-800';
-        case 'billing':
-            return 'bg-purple-100 text-purple-800';
-        case 'billed':
-            return 'bg-green-100 text-green-800';
-        default:
-            return 'bg-gray-100 text-gray-800';
-    }
-};
 
 const getTableStatusClass = (status?: string) => {
     switch (status) {
@@ -175,7 +155,7 @@ const markTableChecked = () => {
                 <Card>
                     <CardHeader>
                         <CardTitle>Orders for table {{ props.table_number }}</CardTitle>
-                        <CardDescription> All orders currently associated with this table. </CardDescription>
+                        <CardDescription> All orders currently associated with this table</CardDescription>
                     </CardHeader>
                     <CardContent>
                         <Table>
@@ -183,8 +163,7 @@ const markTableChecked = () => {
                                 <TableRow>
                                     <TableHead>Order</TableHead>
                                     <TableHead>Total</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead>Payment</TableHead>
+                                    <TableHead>Order Status</TableHead>
                                     <TableHead>Created</TableHead>
                                     <TableHead>Actions</TableHead>
                                 </TableRow>
@@ -202,11 +181,7 @@ const markTableChecked = () => {
                                             </div>
                                         </TableCell>
                                         <TableCell>{{ formatPrice(order.total_amount) }}</TableCell>
-                                        <TableCell>
-                                            <span class="rounded-full px-2 py-1 text-xs font-medium" :class="getStatusClass(order.status)">
-                                                {{ order.status }}
-                                            </span>
-                                        </TableCell>
+
                                         <TableCell>
                                             <span
                                                 :class="
@@ -230,7 +205,7 @@ const markTableChecked = () => {
                                                     >Mark Paid</Button
                                                 >
                                                 <Button
-                                                    v-if="order.status === 'billing'"
+                                                    v-if="props.qr_code?.status === 'billing'"
                                                     size="sm"
                                                     class="bg-purple-600 hover:bg-purple-700"
                                                     @click="markOrderBilled(order)"
@@ -242,7 +217,7 @@ const markTableChecked = () => {
                                     </TableRow>
 
                                     <TableRow>
-                                        <TableCell :colspan="6">
+                                        <TableCell :colspan="5">
                                             <div class="space-y-4">
                                                 <div
                                                     v-for="item in order.orderItems"

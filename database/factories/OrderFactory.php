@@ -24,7 +24,7 @@ class OrderFactory extends Factory
             'code' => Str::random(10),
             'customer_notes' => $this->faker->optional()->sentence(),
             'total_amount' => $this->faker->randomFloat(2, 10, 500),
-            'status' => 'active',
+            // status column removed: use is_paid and qr_code.status for lifecycle
             'is_paid' => false,
         ];
     }

@@ -64,18 +64,22 @@ class PublicController extends Controller
                   });
             });
 
-        // Fetch the most recent active order for this QR/table
+        // Fetch the most recent unpaid order for this QR/table
+        // Note: orders.status column was removed; use is_paid to determine unpaid orders.
         $activeOrder = (clone $baseQuery)
+            ->with('qrCode')
             ->where('is_paid', false)
-            ->whereIn('status', ['active', 'billing', 'billed'])
             ->latest()
             ->first();
 
         // Fetch all orders for this QR/table for order history
         $orderHistory = (clone $baseQuery)
-            ->with(['orderItems' => function ($query) {
-                $query->orderBy('created_at', 'desc');
-            }])
+            ->with([
+                'qrCode',
+                'orderItems' => function ($query) {
+                    $query->orderBy('created_at', 'desc');
+                }
+            ])
             ->latest()
             ->get()
             ->map(function ($order) {

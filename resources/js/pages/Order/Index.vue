@@ -125,24 +125,7 @@ const getTableKey = (table: any) => {
     return table.qr_code_id ?? table.table_number;
 };
 
-// Navigate to an order or table show page without triggering the Inertia progress bar
-const goToOrder = (order: Order) => {
-    processingOrders.value[order.id] = true;
-    router.get(
-        route('orders.show', { restaurant: props.restaurant.id, order: order.id }),
-        {},
-        {
-            preserveScroll: true,
-            showProgress: false,
-            onFinish: () => {
-                processingOrders.value[order.id] = false;
-            },
-            onError: () => {
-                processingOrders.value[order.id] = false;
-            },
-        },
-    );
-};
+
 
 // Navigate to a table details (use the first order of that table as the anchor)
 const goToTable = (table: any) => {
@@ -165,34 +148,6 @@ const goToTable = (table: any) => {
             },
             onError: () => {
                 processingOrders.value[key] = false;
-            },
-        },
-    );
-};
-
-// Mark an order as paid without triggering the Inertia progress bar
-const markOrderPaid = (order: Order) => {
-    processingOrders.value[order.id] = true;
-
-    // Compute amount including option prices (fallback to order.total_amount if items not present)
-    let amount = Number(order.total_amount || 0);
-    if (order.orderItems && Array.isArray(order.orderItems) && order.orderItems.length > 0) {
-        amount = order.orderItems.reduce((sum: number, it: any) => {
-            return sum + calculateItemTotal(it);
-        }, 0);
-    }
-
-    router.patch(
-        route('orders.mark-paid', { restaurant: props.restaurant.id, order: order.id }),
-        { amount },
-        {
-            preserveScroll: true,
-            showProgress: false,
-            onFinish: () => {
-                processingOrders.value[order.id] = false;
-            },
-            onError: () => {
-                processingOrders.value[order.id] = false;
             },
         },
     );
@@ -240,7 +195,7 @@ const markTableChecked = (table: any) => {
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>All Orders</CardTitle>
+                        <CardTitle>All Orderss</CardTitle>
                         <CardDescription>Manage and track all orders for {{ props.restaurant.name }}</CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -254,7 +209,7 @@ const markTableChecked = (table: any) => {
                                     <TableHead>Orders</TableHead>
                                     <TableHead>Total</TableHead>
                                     <TableHead>Status</TableHead>
-                                    <TableHead>Last Activity</TableHead>
+                                    <TableHead>Last Activityss</TableHead>
                                     <TableHead>Actions</TableHead>
                                 </TableRow>
                             </TableHeader>

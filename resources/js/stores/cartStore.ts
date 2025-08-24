@@ -66,10 +66,10 @@ interface ActiveOrder {
     table_number: string;
     code: string;
     total_amount: number;
-    status: 'active' | 'billing' | 'billed' | 'completed';
     is_paid: boolean;
     items: OrderItemStatus[];
     created_at: string;
+    qr_code?: { id?: number; status?: string };
 }
 
 export const useCartStore = defineStore('cart', () => {
@@ -141,12 +141,13 @@ export const useCartStore = defineStore('cart', () => {
     const hasActiveOrderItems = computed(() => {
         // Check activeOrder first
         if (activeOrder.value && activeOrder.value.items && activeOrder.value.items.length > 0) {
-            return true;
-        }
+                return true;
+            }
 
-        // Fallback: check orderHistory for any orders that are still active and have items
+        // Fallback: check orderHistory for any orders that are still unpaid and have items
+        // We no longer rely on a string `status` on orders; use is_paid (and fall back to qr_code status if needed elsewhere).
         if (orderHistory.value && Array.isArray(orderHistory.value)) {
-            return orderHistory.value.some(o => o.status === 'active' && o.items && o.items.length > 0);
+            return orderHistory.value.some((o: ActiveOrder) => (o.is_paid !== true) && o.items && o.items.length > 0);
         }
 
         return false;
@@ -160,13 +161,14 @@ export const useCartStore = defineStore('cart', () => {
     // Can request bill when there is at least one active order for the table with items
     const canRequestBill = computed(() => {
         // Check activeOrder first
-        if (activeOrder.value && activeOrder.value.status === 'active' && activeOrder.value.items && activeOrder.value.items.length > 0) {
-            return true;
-        }
+        if (activeOrder.value && !activeOrder.value.is_paid && activeOrder.value.items && activeOrder.value.items.length > 0) {
+                return true;
+            }
 
-        // Fallback: check orderHistory for any orders that are still active
+        // Fallback: check orderHistory for any unpaid orders with items
+        // Do not rely on string status on orders; use is_paid.
         if (orderHistory.value && Array.isArray(orderHistory.value)) {
-            return orderHistory.value.some(o => o.status === 'active' && o.items && o.items.length > 0);
+            return orderHistory.value.some((o: ActiveOrder) => (o.is_paid !== true) && o.items && o.items.length > 0);
         }
 
         return false;
@@ -174,34 +176,37 @@ export const useCartStore = defineStore('cart', () => {
 
     // Show bill button when any active order exists for the table
     const shouldShowBillButton = computed(() => {
-        if (activeOrder.value && activeOrder.value.status === 'active') return true;
-        if (orderHistory.value && Array.isArray(orderHistory.value)) {
-            return orderHistory.value.some(o => o.status === 'active');
+        if (activeOrder.value && !activeOrder.value.is_paid) return true;
+            if (orderHistory.value && Array.isArray(orderHistory.value)) {
+                return orderHistory.value.some(o => !o.is_paid && o.items && o.items.length > 0);
         }
         return false;
     });
 
     const shouldShowInvoice = computed(() => {
         if (!activeOrder.value) return false;
-        return ['billing', 'billed', 'completed'].includes(activeOrder.value.status);
+        const s = activeOrder.value.qr_code?.status;
+        return activeOrder.value.is_paid || (s && ['billing', 'billed', 'completed'].includes(s));
     });
 
     const shouldShowPaymentQR = computed(() => {
         if (!activeOrder.value) return false;
-        return activeOrder.value.status === 'billing';
+        return activeOrder.value.qr_code?.status === 'billing';
     });
 
     const shouldShowMenu = computed(() => {
         if (!activeOrder.value) return true;
-        return activeOrder.value.status === 'active';
+        // Show menu when order is not in billing flow and not already paid
+        const s = activeOrder.value.qr_code?.status;
+        return !activeOrder.value.is_paid && s !== 'billing';
     });
 
     const isBillingRequested = computed(() => {
-        return activeOrder.value?.status === 'billing';
+        return activeOrder.value?.qr_code?.status === 'billing';
     });
 
     const isBilled = computed(() => {
-        return activeOrder.value?.status === 'billed';
+        return activeOrder.value?.qr_code?.status === 'billed' || activeOrder.value?.is_paid === true;
     });
 
     // Helper function to check if an item has valid options with values
@@ -483,16 +488,16 @@ export const useCartStore = defineStore('cart', () => {
         };
 
         // Include the main active order if present and active
-        if (activeOrder.value && activeOrder.value.status === 'active') {
+        if (activeOrder.value && activeOrder.value.items && activeOrder.value.items.length > 0) {
             addOrder(activeOrder.value);
         }
 
         // Include any orders from history that are still active
         if (orderHistory.value && Array.isArray(orderHistory.value)) {
             orderHistory.value.forEach((o) => {
-                if (o && o.status === 'active') {
-                    addOrder(o);
-                }
+                if (o && o.items && o.items.length > 0) {
+                        addOrder(o);
+                    }
             });
         }
 
@@ -523,15 +528,14 @@ export const useCartStore = defineStore('cart', () => {
 
         try {
             // Optimistically update local activeOrder and any matching orderHistory entries
-            if (activeOrder.value && activeOrder.value.status === 'active') {
-                activeOrder.value.status = 'billing';
+            // We cannot rely on string statuses anymore; set a temporary flag on orders to indicate billing requested.
+            if (activeOrder.value) {
+                (activeOrder.value as any).__optimisticBilling = true;
             }
 
             if (orderHistory.value && Array.isArray(orderHistory.value)) {
                 orderHistory.value.forEach((o) => {
-                    if (o.status === 'active') {
-                        o.status = 'billing';
-                    }
+                    (o as any).__optimisticBilling = true;
                 });
             }
 
@@ -543,16 +547,14 @@ export const useCartStore = defineStore('cart', () => {
 
             await router.post(`/public/order/${restaurantCode}/${tableCode}/request-bill`);
         } catch (error) {
-            // Revert optimistic updates on error
-            if (activeOrder.value && activeOrder.value.status === 'billing') {
-                activeOrder.value.status = 'active';
+            // Revert optimistic flags on error
+            if (activeOrder.value) {
+                delete (activeOrder.value as any).__optimisticBilling;
             }
 
             if (orderHistory.value && Array.isArray(orderHistory.value)) {
                 orderHistory.value.forEach((o) => {
-                    if (o.status === 'billing') {
-                        o.status = 'active';
-                    }
+                    delete (o as any).__optimisticBilling;
                 });
             }
 

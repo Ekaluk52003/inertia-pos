@@ -278,9 +278,13 @@ const markAsPaid = () => {
                                     <span class="text-sm">{{ props.order.table_number }}</span>
                                 </div>
                                 <div class="flex items-center justify-between">
-                                    <span class="text-sm font-medium">Status:</span>
-                                    <span class="rounded-full px-2 py-1 text-xs font-medium" :class="getStatusClass(props.order.status)">
-                                        {{ props.order.status }}
+
+                                    <!-- Order-level lifecycle removed: show payment state or table status -->
+                                    <span
+                                        class="rounded-full px-2 py-1 text-xs font-medium"
+                                        :class="props.order.is_paid ? 'bg-green-100 text-green-800' : getTableStatusClass(tableStatus)"
+                                    >
+                                        {{ props.order.is_paid ? 'Paid' : (tableStatus ?? 'Active') }}
                                     </span>
                                 </div>
                                 <div class="flex items-center justify-between">
@@ -430,8 +434,13 @@ const markAsPaid = () => {
                                         <TableCell class="font-medium">{{ torder.code.substring(0, 8) }}...</TableCell>
                                         <TableCell>{{ formatPrice(torder.total_amount) }}</TableCell>
                                         <TableCell>
-                                            <span class="rounded-full px-2 py-1 text-xs font-medium" :class="getStatusClass(torder.status)">
-                                                {{ torder.status }}
+                                            <span
+                                                class="rounded-full px-2 py-1 text-xs font-medium"
+                                                :class="
+                                                    torder.is_paid ? 'bg-green-100 text-green-800' : getTableStatusClass(props.order.qr_code?.status)
+                                                "
+                                            >
+                                                {{ torder.is_paid ? 'Paid' : (props.order.qr_code?.status ?? 'Active') }}
                                             </span>
                                         </TableCell>
                                         <TableCell>{{ formatDate(torder.created_at) }}</TableCell>

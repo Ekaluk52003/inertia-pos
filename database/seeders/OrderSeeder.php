@@ -35,7 +35,7 @@ class OrderSeeder extends Seeder
      */
     private function createOrdersForRestaurant($restaurant, $menuItems, $count): void
     {
-        $statuses = ['pending', 'cooking', 'ready', 'completed'];
+    $statuses = ['pending', 'cooking', 'ready', 'completed'];
 
         for ($i = 1; $i <= $count; $i++) {
             $tableNumber = rand(1, 10);
@@ -49,7 +49,7 @@ class OrderSeeder extends Seeder
                 'code' => Str::random(8),
                 'total_amount' => 0, // Will be calculated after adding items
                 'is_paid' => $isPaid,
-                'status' => $orderStatus,
+                // status removed: table/qr_code status used for lifecycle
                 'customer_notes' => rand(0, 1) === 1 ? 'Please make it not too spicy.' : null,
                 'created_at' => Carbon::now()->subHours(rand(1, 8)),
                 'updated_at' => Carbon::now()->subHours(rand(0, 1)),
@@ -74,6 +74,7 @@ class OrderSeeder extends Seeder
                     'name' => $menuItem->name,
                     'quantity' => $quantity,
                     'price' => $itemPrice,
+                    // item status kept for kitchen workflow if present
                     'status' => $itemStatus,
                     'special_instructions' => rand(0, 3) === 0 ? 'Extra sauce please.' : null,
                 ]);
@@ -93,7 +94,7 @@ class OrderSeeder extends Seeder
                 'code' => Str::random(8),
                 'total_amount' => 0,
                 'is_paid' => true,
-                'status' => 'completed',
+                // status removed: completed implied by is_paid
                 'customer_notes' => null,
                 'created_at' => Carbon::yesterday()->addHours(rand(10, 20)),
                 'updated_at' => Carbon::yesterday()->addHours(rand(20, 23)),

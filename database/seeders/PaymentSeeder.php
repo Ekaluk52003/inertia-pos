@@ -14,8 +14,8 @@ class PaymentSeeder extends Seeder
      */
     public function run(): void
     {
-        // Get all paid orders
-        $paidOrders = Order::where('is_paid', true)->get();
+    // Get all paid orders
+    $paidOrders = Order::where('is_paid', true)->get();
 
         foreach ($paidOrders as $order) {
             Payment::create([

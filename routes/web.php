@@ -101,9 +101,7 @@ Route::prefix('public')->group(function () {
     // Order creation
     Route::post('order/{restaurantCode}/{tableCode}', [OrderController::class, 'storeFromMenu'])->name('public.order.store');
 
-    // Order status tracking
-    Route::get('order/{orderCode}/status', [OrderController::class, 'getOrderStatus'])->name('public.order.status');
-
+ 
     // Bill request
     Route::post('order/{restaurantCode}/{tableCode}/request-bill', [OrderController::class, 'requestBill'])->name('public.order.request-bill');
 

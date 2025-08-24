@@ -63,17 +63,11 @@ class OrderController extends Controller
             // Resolve QR code if this group maps to an actual qr id
             $qrCode = is_string($groupKey) && str_starts_with($groupKey, 'legacy:') ? null : ($qrCodes[$groupKey] ?? null);
 
-            // Determine table status from QR code if available, otherwise derive from orders
-            $status = 'active';
-            if ($qrCode) {
-                $status = $qrCode->status ?? 'active';
-            } else {
-                if ($ordersArr->firstWhere('status', 'billing')) {
-                    $status = 'billing';
-                } elseif ($ordersArr->firstWhere('status', 'billed')) {
-                    $status = 'billed';
-                }
-            }
+            // Determine table status from QR code if available. We no longer rely on
+            // individual orders' status strings; the QR (table) lifecycle is the source
+            // of truth for table-level state. If QR is missing, default to 'active' and
+            // rely on is_paid to indicate payment state.
+            $status = $qrCode ? ($qrCode->status ?? 'active') : 'active';
 
             // Compute whether any order is unpaid
             $isPaid = $ordersArr->every(fn ($o) => ($o['is_paid'] ?? false) === true);
@@ -492,7 +486,6 @@ class OrderController extends Controller
                     'code' => Str::uuid()->toString(),
                     'total_amount' => $totalAmount,
                     'is_paid' => $isPaid,
-                    'status' => 'active',
                     'customer_notes' => $validated['customer_notes'] ?? null,
                 ];
 
@@ -853,26 +846,7 @@ class OrderController extends Controller
         ], $status);
     }
 
-    /**
-     * Get the status of an order (for customer tracking).
-     */
-    public function getOrderStatus($orderCode)
-    {
-        $order = Order::where('code', $orderCode)
-            ->with(['orderItems', 'restaurant'])
-            ->firstOrFail();
 
-        return Inertia::render('Customer', [
-            'restaurant' => $order->restaurant,
-            'table' => [
-                'number' => $order->table_number,
-                'code' => $orderCode,
-            ],
-            'activeOrder' => $order,
-            'menuItems' => $order->restaurant->menuItems,
-            'categories' => $order->restaurant->menuItems->pluck('category')->unique(),
-        ]);
-    }
 
     /**
      * Request bill for an order (customer-facing).

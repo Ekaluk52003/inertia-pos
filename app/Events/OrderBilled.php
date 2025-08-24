@@ -41,7 +41,7 @@ class OrderBilled implements ShouldBroadcast
             'order_id' => $this->order->id,
             'table_number' => $this->order->table_number,
             'total_amount' => $this->order->total_amount,
-            'status' => $this->order->status,
+            'is_paid' => $this->order->is_paid,
         ];
     }
 }
