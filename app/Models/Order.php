@@ -17,6 +17,7 @@ class Order extends Model
     protected $fillable = [
         'restaurant_id',
         'table_number',
+    'qr_code_id',
         'code',
         'total_amount',
         'is_paid',
@@ -102,6 +103,14 @@ class Order extends Model
     public function restaurant()
     {
         return $this->belongsTo(Restaurant::class);
+    }
+
+    /**
+     * Get the QR code that was used to create this order (nullable for legacy orders).
+     */
+    public function qrCode()
+    {
+        return $this->belongsTo(QrCode::class, 'qr_code_id');
     }
 
     /**

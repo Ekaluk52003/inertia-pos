@@ -65,12 +65,15 @@ const slipInputRef = ref<HTMLInputElement | null>(null);
 const slipForm = useForm({
     slip_image: null as File | null,
 });
-const orderAutoSubmitted = ref(false);
 
 // Separate form used to immediately verify slip upon selection
 const slipVerifyForm = useForm({
     slip_image: null as File | null,
     amount: 0,
+    // send items and restaurant/table so server can recompute total securely
+    items: [] as any[],
+    restaurantCode: props.restaurantId,
+    tableCode: props.tableCode,
 });
 
 // Order form (used to submit order and capture upload progress for slip)
@@ -81,14 +84,13 @@ const orderForm = useForm({
 });
 
 const submitOrderInternal = () => {
-    if (orderAutoSubmitted.value) {
+    if (orderForm.processing) {
         return;
     }
     const items = cartStore.prepareOrderItems();
     orderForm.items = items;
     orderForm.customer_notes = '';
     orderForm.slip_image = slipForm.slip_image || null;
-    orderAutoSubmitted.value = true;
     orderForm.post(route('public.order.store', { restaurantCode: props.restaurantId, tableCode: props.tableCode }), {
         forceFormData: true,
         preserveScroll: true,
@@ -100,8 +102,6 @@ const submitOrderInternal = () => {
             cartStore.clearCart();
             showPaymentQR.value = false;
             removeSlip();
-            // Allow subsequent orders in the same session
-            orderAutoSubmitted.value = false;
             router.reload({ only: ['orderHistory'] });
             if (props.orderHistory && Array.isArray(props.orderHistory)) {
                 const hist: any[] = props.orderHistory.map((o) => ({ ...o, status: o.status || (o.is_paid ? 'completed' : 'active') }));
@@ -119,7 +119,6 @@ const submitOrderInternal = () => {
             slipStatus.value = 'error';
             const first = Object.values(errors)[0] as string | undefined;
             slipMessage.value = first || 'Order submission failed';
-            orderAutoSubmitted.value = false; // allow retry via re-upload
         },
     });
 };
@@ -144,44 +143,32 @@ const handleSlipUpload = (e: Event) => {
     slipStatus.value = 'pending';
     slipMessage.value = 'Verifying…';
     // Keep original file in slipForm for later order submission reuse
+    // Keep the selected file for later submission. We will not call the
+    // separate verify endpoint here because SlipOK forbids verifying the
+    // same slip twice. The server's `storeFromMenu` will perform the single
+    // verification when the order is submitted.
     slipForm.slip_image = file;
+    // Mirror into the verify form fields for backwards compatibility (no POST)
     slipVerifyForm.slip_image = file;
-    slipVerifyForm.amount = cartStore.cartTotal;
-    slipVerifyForm.post(route('public.slip.verify'), {
-        forceFormData: true,
-        preserveScroll: true,
-        onError: (errors) => {
-            const first = Object.values(errors)[0] as string | undefined;
-            slipStatus.value = 'error';
-            slipMessage.value = first || 'Verification failed';
-        },
-        onSuccess: (page: any) => {
-            const flash = page.props?.flash || {};
-            const slipFlash = flash.slip_verification;
-            if (slipFlash && slipFlash.message) {
-                slipStatus.value = 'success';
-                slipMessage.value = slipFlash.message;
-            } else if (flash.success) {
-                slipStatus.value = 'success';
-                slipMessage.value = flash.success;
-            } else if (flash.slip_error) {
-                slipStatus.value = 'error';
-                slipMessage.value = flash.slip_error;
-            } else {
-                slipStatus.value = 'success';
-                slipMessage.value = 'Verified';
-            }
-            // Auto-submit order after successful verification (payBefore path only)
-            if (props.payBefore && slipStatus.value === 'success' && !orderAutoSubmitted.value) {
-                submitOrderInternal();
-            }
-        },
-        onFinish: () => {
-            if (input) {
-                input.value = '';
-            }
-        },
-    });
+    slipVerifyForm.items = cartStore.prepareOrderItems();
+    slipVerifyForm.restaurantCode = props.restaurantId;
+    slipVerifyForm.tableCode = props.tableCode;
+    slipVerifyForm.amount = cartStore.cartTotal; // kept for debugging only
+
+    // If this restaurant requires payment before ordering, auto-submit the
+    // full order now (which sends the slip to `storeFromMenu` once).
+    if (props.payBefore && !orderForm.processing) {
+        slipStatus.value = 'pending';
+        slipMessage.value = 'Submitting payment and order…';
+        submitOrderInternal();
+    } else {
+        // For non pay-before flows we simply attach the slip for later submission
+        slipStatus.value = 'success';
+        slipMessage.value = 'Slip ready to submit';
+        if (input) {
+            input.value = '';
+        }
+    }
 };
 
 const retrySlip = () => {
@@ -204,8 +191,6 @@ const removeSlip = () => {
     slipFileName.value = '';
     slipForm.slip_image = null;
     slipVerifyForm.slip_image = null;
-    // Ensure we can auto-submit again on next attempt
-    orderAutoSubmitted.value = false;
 };
 
 // Calculate total price for an item. Prefer the persisted `item.price` (it already includes option extras).
@@ -320,8 +305,7 @@ const submitOrder = () => {
             return;
         }
 
-        // Opening the QR flow should reset previous submission guard
-        orderAutoSubmitted.value = false;
+        // Opening the QR flow should clear the QR UI and let the user proceed
         showPaymentQR.value = true;
         return;
     }
@@ -662,7 +646,7 @@ const submitOrder = () => {
                         <Button
                             v-if="!props.payBefore || (props.payBefore && !showPaymentQR)"
                             class="mt-4 w-full"
-                            :disabled="cartStore.cart.length === 0 || slipStatus === 'pending'"
+                            :disabled="cartStore.cart.length === 0 || slipStatus === 'pending' || orderForm.processing"
                             @click="submitOrder"
                         >
                             <span v-if="processing" class="flex items-center">

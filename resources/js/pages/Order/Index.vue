@@ -30,6 +30,7 @@ interface Props {
     };
     // Optional table aggregation provided by the server
     tables?: Array<{
+        qr_code_id?: number | null;
         table_number: string;
         orders_count: number;
         total_amount: number;
@@ -119,6 +120,11 @@ const calculateItemTotal = (item: any): number => {
 // Track processing state per order so we can show a spinner
 const processingOrders = ref<Record<number, boolean>>({});
 
+// Helper to compute a stable processing key for a table row
+const getTableKey = (table: any) => {
+    return table.qr_code_id ?? table.table_number;
+};
+
 // Navigate to an order or table show page without triggering the Inertia progress bar
 const goToOrder = (order: Order) => {
     processingOrders.value[order.id] = true;
@@ -140,18 +146,25 @@ const goToOrder = (order: Order) => {
 
 // Navigate to a table details (use the first order of that table as the anchor)
 const goToTable = (table: any) => {
-    processingOrders.value[table.table_number] = true;
+    const key = table.qr_code_id ?? table.table_number;
+    processingOrders.value[key] = true;
     router.get(
         route('orders.table.show', { restaurant: props.restaurant.id, tableNumber: table.table_number }),
-        {},
+        { qrCodeId: table.qr_code_id ?? null },
         {
             preserveScroll: true,
             showProgress: false,
             onFinish: () => {
-                processingOrders.value[table.table_number] = false;
+                processingOrders.value[key] = false;
+                // Refresh the table show to reflect the new payment/checked status
+                router.get(
+                    route('orders.table.show', { restaurant: props.restaurant.id, tableNumber: table.table_number }),
+                    { qrCodeId: table.qr_code_id ?? null },
+                    { preserveState: false, showProgress: false },
+                );
             },
             onError: () => {
-                processingOrders.value[table.table_number] = false;
+                processingOrders.value[key] = false;
             },
         },
     );
@@ -185,21 +198,24 @@ const markOrderPaid = (order: Order) => {
     );
 };
 
-// Mark an order as billed
-const markOrderBilled = (order: Order) => {
-    processingOrders.value[order.id] = true;
+// Mark a table as checked (creates aggregated payment for the table/QR)
+const markTableChecked = (table: any) => {
+    const key = table.qr_code_id ?? table.table_number;
+    processingOrders.value[key] = true;
 
     router.post(
-        route('orders.mark-billed', { restaurant: props.restaurant.id, order: order.id }),
+        route('orders.table.check', { restaurant: props.restaurant.id, tableNumber: table.table_number }),
         {},
         {
             preserveScroll: true,
             showProgress: false,
             onFinish: () => {
-                processingOrders.value[order.id] = false;
+                processingOrders.value[key] = false;
+                // Refresh the Orders index so the table/QR status is updated in the list
+                router.get(route('orders.index', { restaurant: props.restaurant.id }), {}, { preserveState: false, showProgress: false });
             },
             onError: () => {
-                processingOrders.value[order.id] = false;
+                processingOrders.value[key] = false;
             },
         },
     );
@@ -243,7 +259,7 @@ const markOrderBilled = (order: Order) => {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                <TableRow v-for="table in props.tables || []" :key="table.table_number">
+                                <TableRow v-for="table in props.tables || []" :key="table.qr_code_id ?? table.table_number">
                                     <TableCell class="font-medium">{{ table.table_number }}</TableCell>
                                     <TableCell>{{ table.orders_count }}</TableCell>
                                     <TableCell>{{ formatPrice(table.total_amount) }}</TableCell>
@@ -257,12 +273,29 @@ const markOrderBilled = (order: Order) => {
                                         <div class="flex space-x-2">
                                             <Button variant="outline" size="sm" @click="goToTable(table)"> View </Button>
                                             <Button
-                                                v-if="table.status === 'billing'"
+                                                v-if="table.status === 'billing' && table.orders && table.orders.length > 0"
                                                 variant="default"
                                                 size="sm"
-                                                @click="markOrderBilled(table.orders[0])"
                                                 class="bg-purple-600 hover:bg-purple-700"
+                                                :disabled="processingOrders[getTableKey(table)] === true"
+                                                @click.prevent="markTableChecked(table)"
                                             >
+                                                <svg
+                                                    v-if="processingOrders[getTableKey(table)]"
+                                                    class="mr-2 h-4 w-4 animate-spin"
+                                                    viewBox="0 0 24 24"
+                                                >
+                                                    <circle
+                                                        class="opacity-25"
+                                                        cx="12"
+                                                        cy="12"
+                                                        r="10"
+                                                        stroke="currentColor"
+                                                        stroke-width="4"
+                                                        fill="none"
+                                                    ></circle>
+                                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                                                </svg>
                                                 Mark Billed
                                             </Button>
                                         </div>

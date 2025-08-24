@@ -51,17 +51,28 @@ class PublicController extends Controller
         // Group menu items by category
         $categories = $menuItems->pluck('category')->unique()->values();
 
-        // Fetch the most recent active order for this table
-        $activeOrder = Order::where('restaurant_id', $restaurant->id)
-            ->where('table_number', $qrCode->table_number)
+        // Prefer orders explicitly tied to this QR code (new behavior). For legacy orders
+        // where qr_code_id is null, fall back to table_number but only include orders
+        // created after the QR was generated so old tables won't surface.
+        $baseQuery = Order::where('restaurant_id', $restaurant->id)
+            ->where(function ($q) use ($qrCode) {
+                $q->where('qr_code_id', $qrCode->id)
+                  ->orWhere(function ($sub) use ($qrCode) {
+                      $sub->whereNull('qr_code_id')
+                          ->where('table_number', $qrCode->table_number)
+                          ->where('created_at', '>=', $qrCode->created_at);
+                  });
+            });
+
+        // Fetch the most recent active order for this QR/table
+        $activeOrder = (clone $baseQuery)
             ->where('is_paid', false)
             ->whereIn('status', ['active', 'billing', 'billed'])
             ->latest()
             ->first();
 
-        // Fetch all orders for this table for order history
-        $orderHistory = Order::where('restaurant_id', $restaurant->id)
-            ->where('table_number', $qrCode->table_number)
+        // Fetch all orders for this QR/table for order history
+        $orderHistory = (clone $baseQuery)
             ->with(['orderItems' => function ($query) {
                 $query->orderBy('created_at', 'desc');
             }])
@@ -97,7 +108,7 @@ class PublicController extends Controller
             });
 
         // Load the active order's items if it exists
-        if ($activeOrder) {
+    if ($activeOrder) {
             $activeOrder->load(['orderItems' => function ($query) {
                 $query->orderBy('created_at', 'desc');
             }]);

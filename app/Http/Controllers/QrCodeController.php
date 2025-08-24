@@ -6,6 +6,7 @@ use App\Http\Requests\StoreQrCodeRequest;
 use App\Models\QrCode;
 use App\Models\Restaurant;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class QrCodeController extends Controller
@@ -52,7 +53,10 @@ class QrCodeController extends Controller
         $validated['code'] = Str::uuid()->toString();
         $validated['is_active'] = true;
 
-        $restaurant->qrCodes()->create($validated);
+        // Create the QR code without modifying existing QR records. Keep prior QR rows' is_active as-is.
+        DB::transaction(function () use ($restaurant, $validated) {
+            $restaurant->qrCodes()->create($validated);
+        });
 
         return redirect()->route('qrcodes.index', $restaurant)
             ->with('success', 'QR code created successfully.');

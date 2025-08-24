@@ -29,16 +29,19 @@ class OrderController extends Controller
 
         $allOrders = $paginated->getCollection();
 
-        // Preload QR codes for the tables in the paginated window to surface table-level status
-        $tableNumbers = $allOrders->pluck('table_number')->unique()->filter()->values()->all();
+        // Preload QR codes for the orders in the paginated window and aggregate by qr_code_id.
+        // Orders without a qr_code_id will be grouped under a legacy key so we don't lose them.
+        $qrIds = $allOrders->pluck('qr_code_id')->filter()->unique()->values()->all();
         $qrCodes = QrCode::where('restaurant_id', $restaurant->id)
-            ->whereIn('table_number', $tableNumbers ?: ['-1'])
+            ->whereIn('id', $qrIds ?: [-1])
             ->get()
-            ->keyBy('table_number');
+            ->keyBy('id');
 
-        // Compute aggregates per table_number
-        $tables = $allOrders->groupBy('table_number')->map(function ($tableOrders, $tableNumber) use ($qrCodes) {
-            $ordersArr = $tableOrders->map(function ($order) {
+        // Compute aggregates per QR code id. Legacy orders (no qr_code_id) are grouped under 'legacy:{table_number}'.
+        $tables = $allOrders->groupBy(function ($order) {
+            return $order->qr_code_id ?? 'legacy:'.$order->table_number;
+        })->map(function ($groupOrders, $groupKey) use ($qrCodes) {
+            $ordersArr = $groupOrders->map(function ($order) {
                 $orderArray = $order->toArray();
                 if (isset($orderArray['order_items'])) {
                     $orderArray['orderItems'] = $orderArray['order_items'];
@@ -57,10 +60,13 @@ class OrderController extends Controller
             // Last activity is the most recent order created_at
             $lastActivity = $ordersArr->first()['created_at'] ?? null;
 
+            // Resolve QR code if this group maps to an actual qr id
+            $qrCode = is_string($groupKey) && str_starts_with($groupKey, 'legacy:') ? null : ($qrCodes[$groupKey] ?? null);
+
             // Determine table status from QR code if available, otherwise derive from orders
             $status = 'active';
-            if (isset($qrCodes[$tableNumber])) {
-                $status = $qrCodes[$tableNumber]->status ?? 'active';
+            if ($qrCode) {
+                $status = $qrCode->status ?? 'active';
             } else {
                 if ($ordersArr->firstWhere('status', 'billing')) {
                     $status = 'billing';
@@ -73,7 +79,8 @@ class OrderController extends Controller
             $isPaid = $ordersArr->every(fn ($o) => ($o['is_paid'] ?? false) === true);
 
             return [
-                'table_number' => $tableNumber,
+                'qr_code_id' => $qrCode ? $qrCode->id : null,
+                'table_number' => $qrCode ? $qrCode->table_number : ($ordersArr->first()['table_number'] ?? null),
                 'orders' => $ordersArr,
                 'orders_count' => $ordersCount,
                 'total_amount' => $total,
@@ -183,57 +190,77 @@ class OrderController extends Controller
     /**
      * Display all orders for a table (dedicated table details page).
      */
-    public function tableShow(Restaurant $restaurant, $tableNumber)
+    public function tableShow(Request $request, Restaurant $restaurant, $tableNumber)
     {
         $this->authorize('viewAny', [Order::class, $restaurant]);
 
-        // Eager load menu item details for each order item and any payments
-        $tableOrders = $restaurant->orders()
-            ->where('table_number', $tableNumber)
-            ->with(['orderItems.menuItem'])
-            ->orderBy('created_at', 'desc')
-            ->get()
-            ->map(function ($o) {
-                $arr = $o->toArray();
+        // Prefer explicit qrCodeId query parameter when the frontend provides it.
+        // Otherwise resolve a QR code for this table if present (use any QR, not only active).
+        $qrCode = null;
+        $qrCodeId = $request->input('qrCodeId');
 
-                // Normalize order_items -> orderItems
-                if (isset($arr['order_items'])) {
-                    $orderItems = collect($arr['order_items'])->map(function ($it) {
-                        // Normalize nested menu_item -> menuItem if present
-                        if (isset($it['menu_item'])) {
-                            $it['menuItem'] = $it['menu_item'];
-                            unset($it['menu_item']);
-                        }
+        if ($qrCodeId) {
+            $qrCode = QrCode::where('restaurant_id', $restaurant->id)
+                ->where('id', $qrCodeId)
+                ->first();
+        }
 
-                        return $it;
-                    })->values()->all();
+        if (! $qrCode) {
+            // We intentionally do not filter by is_active here — show orders tied to the QR regardless of its active flag.
+            $qrCode = QrCode::where('restaurant_id', $restaurant->id)
+                ->where('table_number', $tableNumber)
+                ->orderBy('created_at', 'desc')
+                ->first();
+        }
 
-                    $arr['orderItems'] = $orderItems;
-                    unset($arr['order_items']);
-                } else {
-                    $arr['orderItems'] = [];
-                }
+        // Build base orders query with eager loading
+        $ordersQuery = $restaurant->orders()->with(['orderItems.menuItem'])->orderBy('created_at', 'desc');
 
-                // Ensure payments key exists. Try to load via relationship if not present.
-                if (! isset($arr['payments']) || ! is_array($arr['payments'])) {
-                    try {
-                        $arr['payments'] = $o->payments()->get()->toArray();
-                    } catch (\Illuminate\Database\QueryException $e) {
-                        Log::warning('OrderController@tableShow could not load payments for order', [
-                            'order_id' => $o->id,
-                            'error' => $e->getMessage(),
-                        ]);
-                        $arr['payments'] = [];
+        if ($qrCode) {
+            // Only include orders explicitly tied to this QR record.
+            // Do NOT include legacy orders by table_number; we don't need that fallback.
+            $ordersQuery->where('qr_code_id', $qrCode->id);
+        } else {
+            // No QR record found: fall back to table_number (legacy behavior)
+            $ordersQuery->where('table_number', $tableNumber);
+        }
+
+        $tableOrders = $ordersQuery->get()->map(function ($o) {
+            $arr = $o->toArray();
+
+            // Normalize order_items -> orderItems
+            if (isset($arr['order_items'])) {
+                $orderItems = collect($arr['order_items'])->map(function ($it) {
+                    // Normalize nested menu_item -> menuItem if present
+                    if (isset($it['menu_item'])) {
+                        $it['menuItem'] = $it['menu_item'];
+                        unset($it['menu_item']);
                     }
+
+                    return $it;
+                })->values()->all();
+
+                $arr['orderItems'] = $orderItems;
+                unset($arr['order_items']);
+            } else {
+                $arr['orderItems'] = [];
+            }
+
+            // Ensure payments key exists. Try to load via relationship if not present.
+            if (! isset($arr['payments']) || ! is_array($arr['payments'])) {
+                try {
+                    $arr['payments'] = $o->payments()->get()->toArray();
+                } catch (\Illuminate\Database\QueryException $e) {
+                    Log::warning('OrderController@tableShow could not load payments for order', [
+                        'order_id' => $o->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                    $arr['payments'] = [];
                 }
+            }
 
-                return $arr;
-            })->values();
-
-        // Include QR code/table metadata if available so the frontend has table status
-        $qrCode = QrCode::where('restaurant_id', $restaurant->id)
-            ->where('table_number', $tableNumber)
-            ->first();
+            return $arr;
+        })->values();
 
         return Inertia::render('Order/TableShow', [
             'restaurant' => $restaurant,
@@ -397,224 +424,29 @@ class OrderController extends Controller
             throw $e;
         }
 
-        // Calculate total amount (includes base price + all selected options)
-        $totalAmount = 0;
-        $orderItems = [];
+    // Build normalized order items and compute total using shared helper
+    [$totalAmount, $orderItems] = $this->buildOrderItemsAndTotal($restaurant, $validated['items']);
 
-        foreach ($validated['items'] as $item) {
-            try {
-                $menuItem = $restaurant->menuItems()->findOrFail($item['menu_id']);
-
-                $quantity = (int) $item['quantity'];
-                $baseUnitPrice = (float) $menuItem->price;
-
-                // Securely recompute additional option price; do not trust client-sent aggregated price
-                $selectedOptionsInput = isset($item['selected_options']) && is_array($item['selected_options'])
-                    ? $item['selected_options']
-                    : [];
-
-                $computedAdditionalPerUnit = 0.0;
-                $normalizedSelectedOptions = [];
-
-                if (! empty($selectedOptionsInput)) {
-                    // Index option groups by name for quick lookup
-                    $optionGroups = [];
-                    if (is_array($menuItem->options)) {
-                        foreach ($menuItem->options as $group) {
-                            if (isset($group['name'])) {
-                                $optionGroups[$group['name']] = $group;
-                            }
-                        }
-                    }
-
-                    foreach ($selectedOptionsInput as $selOpt) {
-                        $optionName = $selOpt['option_name'] ?? null;
-                        $choices = isset($selOpt['choices']) && is_array($selOpt['choices']) ? $selOpt['choices'] : [];
-                        if (! $optionName) {
-                            continue; // skip invalid
-                        }
-                        $group = $optionGroups[$optionName] ?? null;
-                        $additionalForThisOption = 0.0;
-                        if ($group) {
-                            // Support both 'values' and 'choices'
-                            $valueList = [];
-                            if (isset($group['values']) && is_array($group['values'])) {
-                                $valueList = $group['values'];
-                            } elseif (isset($group['choices']) && is_array($group['choices'])) {
-                                $valueList = $group['choices'];
-                            }
-                            foreach ($choices as $choiceName) {
-                                foreach ($valueList as $val) {
-                                    if (($val['name'] ?? null) === $choiceName) {
-                                        $additionalForThisOption += (float) ($val['price'] ?? 0);
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        $computedAdditionalPerUnit += $additionalForThisOption;
-                        $normalizedSelectedOptions[] = [
-                            'option_name' => $optionName,
-                            'choices' => $choices,
-                            'additional_price' => $additionalForThisOption, // recomputed, not trusted from client
-                        ];
-                    }
-                }
-
-                $finalUnitPrice = $baseUnitPrice + $computedAdditionalPerUnit;
-                $lineTotal = $finalUnitPrice * $quantity;
-                // Debug: log per-item price calculation to help trace mismatches
-                Log::debug('OrderController@storeFromMenu price calc', [
-                    'menu_id' => $menuItem->id,
-                    'menu_name' => $menuItem->name ?? null,
-                    'base_unit_price' => $baseUnitPrice,
-                    'computed_additional_per_unit' => $computedAdditionalPerUnit,
-                    'final_unit_price' => $finalUnitPrice,
-                    'quantity' => $quantity,
-                    'line_total' => $lineTotal,
-                    'selected_options_input' => $selectedOptionsInput,
-                    'normalized_selected_options' => $normalizedSelectedOptions,
-                ]);
-                $totalAmount += $lineTotal; // totalAmount includes all base prices + option prices
-
-                $orderItems[] = [
-                    'menu_id' => $menuItem->id,
-                    'name' => $menuItem->name,
-                    'quantity' => $quantity,
-                    'price' => $finalUnitPrice, // store unit price including options
-                    'status' => 'pending',
-                    'special_instructions' => $item['special_instructions'] ?? null,
-                    'options' => $normalizedSelectedOptions,
-                ];
-
-            } catch (\Exception $e) {
-                Log::error('Error processing menu item:', [
-                    'item' => $item,
-                    'error' => $e->getMessage(),
-                ]);
-                throw $e;
-            }
-        }
-
-        // Handle payment status based on restaurant settings
-        $isPaid = false;
-        $paymentData = null;
+    // Handle payment status based on restaurant settings
+    $isPaid = false;
+    // Data to persist into payments table when verification passes
+    $paymentRecordData = null;
 
         if ($restaurant->pay_before) {
             // Only verify payment if payment data is provided
-        if ($request->hasFile('slip_image') || isset($validated['slip_image']) || isset($validated['qr_code_data'])) {
+            if ($request->hasFile('slip_image') || isset($validated['slip_image']) || isset($validated['qr_code_data'])) {
                 try {
-            // Prefer uploaded file when present; otherwise use string payload (url/base64/qr text)
-            $hasFile = $request->hasFile('slip_image');
-            $paymentData = $hasFile ? $request->file('slip_image') : ($validated['slip_image'] ?? $validated['qr_code_data']);
+                    // Prefer uploaded file when present; otherwise use string payload (url/base64/qr text)
+                    $hasFile = $request->hasFile('slip_image');
+                    $verificationPayload = $hasFile ? $request->file('slip_image') : ($validated['slip_image'] ?? $validated['qr_code_data']);
 
-                    // Check if we're in development mode
-                    $devMode = config('services.slipok.dev_mode', false);
-                    $okUse = config('services.slipok.ok_use', true);
+                    // Use shared verification helper
+                    $slipVerification = $this->verifySlipPayload($request, $verificationPayload, (float) $totalAmount);
 
-                    if ($devMode || ! $okUse) {
-                        Log::info('SLIPOK SIMULATION: Bypassing external API (dev mode or SLIPOK_OK_USE=false).');
-
-                        $slipVerification = [
-                            'transRef' => 'DEV_'.\Illuminate\Support\Str::uuid()->toString(),
-                            'amount' => $totalAmount,
-                            'sender' => [
-                                'name' => 'DEV MODE',
-                                'displayName' => 'Development Test',
-                            ],
-                            'sendingBank' => 'DEV BANK',
-                        ];
-                    } else {
-                        // Real SlipOK API call
-                        $apiKey = config('services.slipok.api_key');
-                        $branchId = config('services.slipok.branch_id');
-
-                        if (! $apiKey || ! $branchId) {
-                            throw new \Exception('SlipOK credentials not configured.');
-                        }
-
-                        $url = "https://api.slipok.com/api/line/apikey/{$branchId}";
-                        $response = null;
-
-                        if ($hasFile && $paymentData instanceof \Illuminate\Http\UploadedFile) {
-                            // Uploaded image file
-                            /** @var \Illuminate\Http\UploadedFile $uf */
-                            $uf = $paymentData;
-                            $binary = file_get_contents($uf->getRealPath());
-                            $response = Http::withHeaders(['x-authorization' => $apiKey])
-                                ->withOptions(['verify' => false]) // TODO: enable proper SSL in production
-                                ->attach('files', $binary, $uf->getClientOriginalName() ?: 'slip.jpg')
-                                ->post($url, [
-                                    'log' => true,
-                                    'amount' => $totalAmount,
-                                ]);
-                        } elseif (is_string($paymentData) && filter_var($paymentData, FILTER_VALIDATE_URL)) {
-                            // Remote image URL
-                            $response = Http::withHeaders([
-                                'x-authorization' => $apiKey,
-                                'Content-Type' => 'application/json',
-                            ])->withOptions(['verify' => false]) // TODO: Remove in production - use proper SSL certificates
-                                ->post($url, [
-                                    'url' => $paymentData,
-                                    'log' => true,
-                                    'amount' => $totalAmount,
-                                ]);
-                        } elseif (is_string($paymentData) && str_starts_with($paymentData, 'data:image')) {
-                            // Base64 data URL image - convert to file
-                            $imageData = substr($paymentData, strpos($paymentData, ',') + 1);
-                            $binary = base64_decode($imageData);
-                            if ($binary === false) {
-                                throw new \Exception('Invalid base64 slip image data.');
-                            }
-                            $response = Http::withHeaders(['x-authorization' => $apiKey])
-                                ->withOptions(['verify' => false]) // TODO: Remove in production - use proper SSL certificates
-                                ->attach('files', $binary, 'slip.jpg')
-                                ->post($url, [
-                                    'log' => true,
-                                    'amount' => $totalAmount,
-                                ]);
-                        } else {
-                            // QR raw text data
-                            $response = Http::withHeaders([
-                                'x-authorization' => $apiKey,
-                                'Content-Type' => 'application/json',
-                            ])->withOptions(['verify' => false]) // TODO: Remove in production - use proper SSL certificates
-                                ->post($url, [
-                                    'data' => $paymentData,
-                                    'log' => true,
-                                    'amount' => $totalAmount,
-                                ]);
-                        }
-
-                        Log::info('SlipOK raw response', [
-                            'status' => $response ? $response->status() : null,
-                            'body' => $response ? $response->body() : null,
-                        ]);
-
-                        if (! $response || ! $response->successful()) {
-                            $body = $response ? $response->json() : [];
-                            $msg = $body['message'] ?? 'SlipOK request failed';
-                            $code = $body['code'] ?? 'UNKNOWN';
-                            throw new \Exception("SlipOK API Error ($code): $msg");
-                        }
-
-                        $json = $response->json();
-                        if (! ($json['success'] ?? false)) {
-                            $msg = $json['message'] ?? 'Slip verification failed';
-                            $code = $json['code'] ?? 'INVALID';
-                            throw new \Exception("SlipOK Verification Error ($code): $msg");
-                        }
-
-                        $slipVerification = $json['data'] ?? [];
-                        if (isset($slipVerification['amount']) && (float) $slipVerification['amount'] !== (float) $totalAmount) {
-                            throw new \Exception('Amount mismatch: slip shows '.$slipVerification['amount'].' expected '.$totalAmount);
-                        }
-                    }
-
-                    $paymentData = [
+                    $paymentRecordData = [
                         'table_number' => $qrCode->table_number,
                         'amount' => $totalAmount,
-                        'trans_ref' => $slipVerification['transRef'],
+                        'trans_ref' => $slipVerification['transRef'] ?? null,
                         'sender_name' => $slipVerification['sender']['name'] ?? null,
                         'sender_display_name' => $slipVerification['sender']['displayName'] ?? null,
                         'sending_bank' => $slipVerification['sendingBank'] ?? null,
@@ -623,7 +455,7 @@ class OrderController extends Controller
                     ];
 
                     $isPaid = true;
-                } catch (\Exception $e) {
+                } catch (\Throwable $e) {
                     return redirect()->route('public.menu', [
                         'restaurantCode' => $restaurantCode,
                         'tableCode' => $tableCode,
@@ -656,6 +488,7 @@ class OrderController extends Controller
 
                 $orderData = [
                     'table_number' => $qrCode->table_number,
+                    'qr_code_id' => $qrCode->id,
                     'code' => Str::uuid()->toString(),
                     'total_amount' => $totalAmount,
                     'is_paid' => $isPaid,
@@ -684,9 +517,9 @@ class OrderController extends Controller
             }
 
             // Create payment record if payment was verified
-            if ($paymentData) {
+            if ($paymentRecordData) {
                 // Payments are now table-level; do not set order_id here
-                $payment = Payment::create($paymentData);
+                $payment = Payment::create($paymentRecordData);
             }
 
             DB::commit();
@@ -759,108 +592,238 @@ class OrderController extends Controller
     public function verifySlip(Request $request)
     {
         $validated = $request->validate([
-            // Accept either an uploaded image file OR a qr_code_data string
+            // Require items so server can recompute amount. Keep qr_code_data/slip_image validation.
+            'items' => 'required|array',
+            'items.*.menu_id' => 'required|integer',
+            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.selected_options' => 'nullable|array',
             'slip_image' => 'required_without:qr_code_data|nullable|file|image|max:5120', // 5MB
             'qr_code_data' => 'required_without:slip_image|nullable|string',
         ]);
 
         $hasFile = $request->hasFile('slip_image');
-        $paymentData = $hasFile ? $request->file('slip_image') : ($validated['qr_code_data'] ?? null);
+        $payload = $hasFile ? $request->file('slip_image') : ($validated['qr_code_data'] ?? null);
 
+        // Recompute expected amount server-side from provided items
+        $expectedAmount = 0.0;
         try {
-            $totalAmount = $request->input('amount', 0);
+            $items = $request->input('items');
+            $restaurantCode = $request->input('restaurantCode');
 
-            $devMode = config('services.slipok.dev_mode', false);
-            $okUse = config('services.slipok.ok_use', true);
-
-            if ($devMode || ! $okUse) {
-                $slipVerification = [
-                    'transRef' => 'DEV_'.\Illuminate\Support\Str::uuid()->toString(),
-                    'amount' => $totalAmount,
-                    'sender' => [
-                        'name' => 'DEV MODE',
-                        'displayName' => 'Development Test',
-                    ],
-                    'sendingBank' => 'DEV BANK',
-                ];
-            } else {
-                $apiKey = config('services.slipok.api_key');
-                $branchId = config('services.slipok.branch_id');
-
-                if (! $apiKey || ! $branchId) {
-                    return $this->slipResponse($request, false, 'SlipOK credentials not configured.', null, 500);
-                }
-
-                $url = "https://api.slipok.com/api/line/apikey/{$branchId}";
-                if ($hasFile && $paymentData) {
-                    // Uploaded file path
-                    /** @var \Illuminate\Http\UploadedFile $uf */
-                    $uf = $paymentData;
-                    $binary = file_get_contents($uf->getRealPath());
-                    $response = Http::withHeaders(['x-authorization' => $apiKey])
-                        ->withOptions(['verify' => false])
-                        ->attach('files', $binary, $uf->getClientOriginalName() ?: 'slip.jpg')
-                        ->post($url, [
-                            'log' => true,
-                            'amount' => $totalAmount,
-                        ]);
-                } elseif (is_string($paymentData) && filter_var($paymentData, FILTER_VALIDATE_URL)) {
-                    $response = Http::withHeaders([
-                        'x-authorization' => $apiKey,
-                        'Content-Type' => 'application/json',
-                    ])->withOptions(['verify' => false])->post($url, [
-                        'url' => $paymentData,
-                        'log' => true,
-                        'amount' => $totalAmount,
-                    ]);
-                } elseif (is_string($paymentData) && str_starts_with($paymentData, 'data:image')) {
-                    $imageData = substr($paymentData, strpos($paymentData, ',') + 1);
-                    $binary = base64_decode($imageData);
-                    if ($binary === false) {
-                        return $this->slipResponse($request, false, 'Invalid base64 slip image data.', null, 422);
-                    }
-                    $response = Http::withHeaders(['x-authorization' => $apiKey])
-                        ->withOptions(['verify' => false])
-                        ->attach('files', $binary, 'slip.jpg')
-                        ->post($url, [
-                            'log' => true,
-                            'amount' => $totalAmount,
-                        ]);
-                } else {
-                    $response = Http::withHeaders([
-                        'x-authorization' => $apiKey,
-                        'Content-Type' => 'application/json',
-                    ])->withOptions(['verify' => false])->post($url, [
-                        'data' => $paymentData,
-                        'log' => true,
-                        'amount' => $totalAmount,
-                    ]);
-                }
-
-                if (! $response || ! $response->successful()) {
-                    $body = $response ? $response->json() : [];
-                    $msg = $body['message'] ?? 'SlipOK request failed';
-                    $code = $body['code'] ?? 'UNKNOWN';
-                    return $this->slipResponse($request, false, "SlipOK API Error ($code): $msg", null, 502);
-                }
-
-                $json = $response->json();
-                if (! ($json['success'] ?? false)) {
-                    $msg = $json['message'] ?? 'Slip verification failed';
-                    $code = $json['code'] ?? 'INVALID';
-                    return $this->slipResponse($request, false, "SlipOK Verification Error ($code): $msg", null, 422);
-                }
-
-                $slipVerification = $json['data'] ?? [];
-                if (isset($slipVerification['amount']) && $totalAmount > 0 && (float) $slipVerification['amount'] !== (float) $totalAmount) {
-                    return $this->slipResponse($request, false, 'Amount mismatch: slip shows '.$slipVerification['amount'].' expected '.$totalAmount, null, 422);
+            if (is_array($items) && $restaurantCode) {
+                $restaurant = Restaurant::find($restaurantCode);
+                if ($restaurant) {
+                    [$recomputed, $_] = $this->buildOrderItemsAndTotal($restaurant, $items);
+                    $expectedAmount = $recomputed;
                 }
             }
-            return $this->slipResponse($request, true, 'Slip verified successfully', $slipVerification, 200);
-        } catch (\Exception $e) {
-            Log::error('verifySlip exception', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
-            return $this->slipResponse($request, false, 'Verification failed: '.$e->getMessage(), null, 500);
+
+            // Always require a positive expected amount in strict mode
+            if ($expectedAmount <= 0) {
+                throw new \Exception('Could not determine expected amount for slip verification.');
+            }
+
+            $verification = $this->verifySlipPayload($request, $payload, $expectedAmount);
+            return $this->slipResponse($request, true, 'Slip verified successfully', $verification, 200);
+        } catch (\Throwable $e) {
+            Log::error('verifySlip exception', ['message' => $e->getMessage()]);
+            return $this->slipResponse($request, false, 'Verification failed: '.$e->getMessage(), null, 422);
         }
+    }
+
+    /**
+     * Perform slip verification (DEV bypass supported). Returns verification array on success or throws on failure.
+     * @param  Request  $request  used to inspect headers/context
+     * @param  mixed    $payload  UploadedFile|string (url, base64 data url, raw QR text)
+     * @param  float    $expectedAmount Amount that must match verification result (0 to skip strict check)
+     * @return array<string, mixed>
+     * @throws \Throwable on failure
+     */
+    protected function verifySlipPayload(Request $request, $payload, float $expectedAmount = 0): array
+    {
+        $devMode = config('services.slipok.dev_mode', false);
+        $okUse = config('services.slipok.ok_use', true);
+
+        if ($devMode || ! $okUse) {
+            return [
+                'transRef' => 'DEV_'.\Illuminate\Support\Str::uuid()->toString(),
+                'amount' => $expectedAmount,
+                'sender' => [
+                    'name' => 'DEV MODE',
+                    'displayName' => 'Development Test',
+                ],
+                'sendingBank' => 'DEV BANK',
+            ];
+        }
+
+        $apiKey = config('services.slipok.api_key');
+        $branchId = config('services.slipok.branch_id');
+        if (! $apiKey || ! $branchId) {
+            throw new \Exception('SlipOK credentials not configured.');
+        }
+
+        $url = "https://api.slipok.com/api/line/apikey/{$branchId}";
+        $response = null;
+
+        if ($payload instanceof \Illuminate\Http\UploadedFile) {
+            $binary = file_get_contents($payload->getRealPath());
+            $response = Http::withHeaders(['x-authorization' => $apiKey])
+                ->withOptions(['verify' => false])
+                ->attach('files', $binary, $payload->getClientOriginalName() ?: 'slip.jpg')
+                ->post($url, [
+                    'log' => true,
+                    'amount' => $expectedAmount,
+                ]);
+        } elseif (is_string($payload) && filter_var($payload, FILTER_VALIDATE_URL)) {
+            $response = Http::withHeaders([
+                'x-authorization' => $apiKey,
+                'Content-Type' => 'application/json',
+            ])->withOptions(['verify' => false])->post($url, [
+                'url' => $payload,
+                'log' => true,
+                'amount' => $expectedAmount,
+            ]);
+        } elseif (is_string($payload) && str_starts_with($payload, 'data:image')) {
+            $imageData = substr($payload, strpos($payload, ',') + 1);
+            $binary = base64_decode($imageData);
+            if ($binary === false) {
+                throw new \Exception('Invalid base64 slip image data.');
+            }
+            $response = Http::withHeaders(['x-authorization' => $apiKey])
+                ->withOptions(['verify' => false])
+                ->attach('files', $binary, 'slip.jpg')
+                ->post($url, [
+                    'log' => true,
+                    'amount' => $expectedAmount,
+                ]);
+        } else {
+            $response = Http::withHeaders([
+                'x-authorization' => $apiKey,
+                'Content-Type' => 'application/json',
+            ])->withOptions(['verify' => false])->post($url, [
+                'data' => $payload,
+                'log' => true,
+                'amount' => $expectedAmount,
+            ]);
+        }
+
+        Log::info('SlipOK raw response', [
+            'status' => $response ? $response->status() : null,
+            'body' => $response ? $response->body() : null,
+        ]);
+
+        if (! $response || ! $response->successful()) {
+            $body = $response ? $response->json() : [];
+            $msg = $body['message'] ?? 'SlipOK request failed';
+            $code = $body['code'] ?? 'UNKNOWN';
+            throw new \Exception("SlipOK API Error ($code): $msg");
+        }
+
+        $json = $response->json();
+        if (! ($json['success'] ?? false)) {
+            $msg = $json['message'] ?? 'Slip verification failed';
+            $code = $json['code'] ?? 'INVALID';
+            throw new \Exception("SlipOK Verification Error ($code): $msg");
+        }
+
+        $verified = $json['data'] ?? [];
+        if (isset($verified['amount']) && $expectedAmount > 0 && (float) $verified['amount'] !== (float) $expectedAmount) {
+            throw new \Exception('Amount mismatch: slip shows '.$verified['amount'].' expected '.$expectedAmount);
+        }
+
+        return $verified;
+    }
+
+    /**
+     * Build normalized order items and compute total amount from a restaurant's menu data.
+     * Returns [totalAmount, orderItemsArray].
+     */
+    protected function buildOrderItemsAndTotal(Restaurant $restaurant, array $items): array
+    {
+        $totalAmount = 0.0;
+        $orderItems = [];
+
+        foreach ($items as $item) {
+            try {
+                $menuItem = $restaurant->menuItems()->find($item['menu_id'] ?? null);
+                if (! $menuItem) {
+                    continue;
+                }
+
+                $quantity = (int) ($item['quantity'] ?? 1);
+                $baseUnitPrice = (float) $menuItem->price;
+
+                $selectedOptionsInput = isset($item['selected_options']) && is_array($item['selected_options'])
+                    ? $item['selected_options']
+                    : [];
+
+                $computedAdditionalPerUnit = 0.0;
+                $normalizedSelectedOptions = [];
+
+                if (! empty($selectedOptionsInput)) {
+                    $optionGroups = [];
+                    if (is_array($menuItem->options)) {
+                        foreach ($menuItem->options as $group) {
+                            if (isset($group['name'])) {
+                                $optionGroups[$group['name']] = $group;
+                            }
+                        }
+                    }
+
+                    foreach ($selectedOptionsInput as $selOpt) {
+                        $optionName = $selOpt['option_name'] ?? null;
+                        $choices = isset($selOpt['choices']) && is_array($selOpt['choices']) ? $selOpt['choices'] : [];
+                        if (! $optionName) {
+                            continue;
+                        }
+                        $group = $optionGroups[$optionName] ?? null;
+                        $additionalForThisOption = 0.0;
+                        if ($group) {
+                            $valueList = [];
+                            if (isset($group['values']) && is_array($group['values'])) {
+                                $valueList = $group['values'];
+                            } elseif (isset($group['choices']) && is_array($group['choices'])) {
+                                $valueList = $group['choices'];
+                            }
+                            foreach ($choices as $choiceName) {
+                                foreach ($valueList as $val) {
+                                    if (($val['name'] ?? null) === $choiceName) {
+                                        $additionalForThisOption += (float) ($val['price'] ?? 0);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        $computedAdditionalPerUnit += $additionalForThisOption;
+                        $normalizedSelectedOptions[] = [
+                            'option_name' => $optionName,
+                            'choices' => $choices,
+                            'additional_price' => $additionalForThisOption,
+                        ];
+                    }
+                }
+
+                $finalUnitPrice = $baseUnitPrice + $computedAdditionalPerUnit;
+                $lineTotal = $finalUnitPrice * $quantity;
+
+                $totalAmount += $lineTotal;
+
+                $orderItems[] = [
+                    'menu_id' => $menuItem->id,
+                    'name' => $menuItem->name,
+                    'quantity' => $quantity,
+                    'price' => $finalUnitPrice,
+                    'status' => 'pending',
+                    'special_instructions' => $item['special_instructions'] ?? null,
+                    'options' => $normalizedSelectedOptions,
+                ];
+            } catch (\Throwable $e) {
+                Log::warning('buildOrderItemsAndTotal error', ['item' => $item, 'error' => $e->getMessage()]);
+                // skip problematic item
+            }
+        }
+
+        return [$totalAmount, $orderItems];
     }
 
     /**
@@ -1013,9 +976,17 @@ class OrderController extends Controller
     {
         $this->authorize('viewAny', [Order::class, $restaurant]);
 
-        $qrCode = QrCode::where('restaurant_id', $restaurant->id)
-            ->where('table_number', $tableNumber)
-            ->first();
+        // Include QR code/table metadata if available so the frontend has table status
+        // (we may have already resolved active QR above)
+        if (! isset($qrCode)) {
+            // Prefer the most recent QR record for this table regardless of is_active.
+            // This mirrors tableShow behaviour and ensures we update the correct QR even
+            // if previous logic did not deactivate older QRs.
+            $qrCode = QrCode::where('restaurant_id', $restaurant->id)
+                ->where('table_number', $tableNumber)
+                ->orderBy('created_at', 'desc')
+                ->first();
+        }
 
         // Collect unpaid orders for the table
         $orders = $restaurant->orders()

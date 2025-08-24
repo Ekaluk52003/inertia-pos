@@ -18,6 +18,7 @@ interface QrCode {
     table_number: number;
     code: string;
     is_active: boolean;
+    status: string;
     created_at: string;
     updated_at: string;
 }
@@ -129,6 +130,7 @@ const regenerateQrCode = (qrCode: QrCode) => {
                                     <TableHead>Table</TableHead>
                                     <TableHead>Status</TableHead>
                                     <TableHead class="w-24 text-center">Enabled</TableHead>
+                                    <TableHead>QR Status</TableHead>
                                     <TableHead>QR Code</TableHead>
                                     <TableHead class="text-right">Actions</TableHead>
                                 </TableRow>
@@ -159,6 +161,11 @@ const regenerateQrCode = (qrCode: QrCode) => {
                                                 (activeStates[qrCode.id] ?? qrCode.is_active) ? 'On' : 'Off'
                                             }}</span>
                                         </div>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Badge :variant="qrCode.status === 'checked' ? 'default' : 'outline'">
+                                            {{ qrCode.status ?? 'unknown' }}
+                                        </Badge>
                                     </TableCell>
                                     <TableCell>
                                         <Dialog>

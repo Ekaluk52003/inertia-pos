@@ -28,10 +28,14 @@ class StoreQrCodeRequest extends FormRequest
                 'string',
                 'min:1',
                 'max:255',
-                // Check that no active QR code exists with this table number for this restaurant
+                // Check that no non-checked QR code exists with this table number for this restaurant.
+                // If an existing QR has status = 'checked', it is considered available and a new QR
+                // may be created for the same table_number.
                 Rule::unique('qr_codes', 'table_number')
-                    ->where('restaurant_id', $restaurantId)
-                    ->where('is_active', true),
+                    ->where(function ($query) use ($restaurantId) {
+                        $query->where('restaurant_id', $restaurantId)
+                              ->where('status', '!=', 'checked');
+                    }),
             ],
         ];
     }
@@ -46,7 +50,7 @@ class StoreQrCodeRequest extends FormRequest
             'table_number.string' => 'The table identifier must be text.',
             'table_number.min' => 'The table identifier must be at least 1 character.',
             'table_number.max' => 'The table identifier may not be greater than 255 characters.',
-            'table_number.unique' => 'A QR code for this table identifier already exists and is active. Please use a different identifier or deactivate the existing QR code.',
+            'table_number.unique' => 'A QR code for this table identifier already exists and is not marked as checked. Please use a different identifier or mark the existing QR code as checked before creating a new one.',
         ];
     }
 }
