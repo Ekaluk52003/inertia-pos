@@ -580,16 +580,15 @@ class OrderController extends Controller
 
     /**
      * Verify a slip image or QR code data without creating an order.
-     * Intended for immediate verification after customer uploads a slip.
+     * Intended for resturant pay_after and record the payment.
      */
     public function verifySlip(Request $request)
     {
+        // Items are optional from client now. For pay_after restaurants we'll compute
+        // the expected amount server-side from DB orders for the table/QR.
         $validated = $request->validate([
-            // Require items so server can recompute amount. Keep qr_code_data/slip_image validation.
-            'items' => 'required|array',
-            'items.*.menu_id' => 'required|integer',
-            'items.*.quantity' => 'required|integer|min:1',
-            'items.*.selected_options' => 'nullable|array',
+            'restaurantCode' => 'nullable',
+            'tableCode' => 'nullable',
             'slip_image' => 'required_without:qr_code_data|nullable|file|image|max:5120', // 5MB
             'qr_code_data' => 'required_without:slip_image|nullable|string',
         ]);
@@ -597,35 +596,87 @@ class OrderController extends Controller
         $hasFile = $request->hasFile('slip_image');
         $payload = $hasFile ? $request->file('slip_image') : ($validated['qr_code_data'] ?? null);
 
-        // Recompute expected amount server-side from provided items
-        $expectedAmount = 0.0;
-        try {
-            $items = $request->input('items');
-            $restaurantCode = $request->input('restaurantCode');
+        // Require restaurant/table context to compute the expected amount
+        $restaurant = null;
+        $qrCode = null;
+        $restaurantCode = $validated['restaurantCode'] ?? null;
+        $tableCode = $validated['tableCode'] ?? null;
 
-            if (is_array($items) && $restaurantCode) {
-                $restaurant = Restaurant::find($restaurantCode);
-                if ($restaurant) {
-                    [$recomputed, $_] = $this->buildOrderItemsAndTotal($restaurant, $items);
-                    $expectedAmount = $recomputed;
-                }
-            }
-
-            // Always require a positive expected amount in strict mode
-            if ($expectedAmount <= 0) {
-                throw new \Exception('Could not determine expected amount for slip verification.');
-            }
-
-            $verification = $this->verifySlipPayload($request, $payload, $expectedAmount);
-            return $this->slipResponse($request, true, 'Slip verified successfully', $verification, 200);
-        } catch (\Throwable $e) {
-            Log::error('verifySlip exception', ['message' => $e->getMessage()]);
-            return $this->slipResponse($request, false, 'Verification failed: '.$e->getMessage(), null, 422);
+        if ($restaurantCode) {
+            $restaurant = Restaurant::find($restaurantCode);
         }
+
+        if ($tableCode) {
+            $qrQuery = QrCode::query()->where('code', $tableCode);
+            if ($restaurant) {
+                $qrQuery->where('restaurant_id', $restaurant->id);
+            }
+            $qrCode = $qrQuery->orderBy('created_at', 'desc')->first();
+            if (! $restaurant && $qrCode) {
+                $restaurant = $qrCode->restaurant;
+            }
+        }
+
+        if (! $restaurant || ! $qrCode) {
+            return $this->slipResponse($request, false, 'Missing restaurant or table context for slip verification.', null, 422);
+        }
+
+        // Compute expected amount from unpaid orders for this table (prefer qr_code_id, fallback table_number)
+        $ordersQuery = Order::query()
+            ->where('restaurant_id', $restaurant->id)
+            ->where(function ($q) use ($qrCode) {
+                $q->where('qr_code_id', $qrCode->id)
+                    ->orWhere('table_number', $qrCode->table_number);
+            })
+            ->where('is_paid', false);
+
+        $expectedAmount = (float) $ordersQuery->sum('total_amount');
+
+        if ($expectedAmount <= 0) {
+            return $this->slipResponse($request, false, 'No unpaid orders found for this table.', null, 422);
+        }
+
+        // Verify slip with expected amount
+        $verification = $this->verifySlipPayload($request, $payload, $expectedAmount);
+
+        // If verification succeeds, create a payment record and mark all relevant orders as paid
+        $payment = null;
+    DB::transaction(function () use ($ordersQuery, $restaurant, $qrCode, $expectedAmount, $verification, &$payment) {
+            // Create aggregated payment for the table
+            $payment = Payment::create([
+                'table_number' => $qrCode->table_number,
+                'trans_ref' => $verification['transRef'] ?? ('table-'.Str::uuid()->toString()),
+                'amount' => $expectedAmount,
+                'sender_name' => $verification['sender']['name'] ?? null,
+                'sender_display_name' => $verification['sender']['displayName'] ?? null,
+                'sending_bank' => $verification['sendingBank'] ?? null,
+                'restaurant_id' => $restaurant->id,
+                'qr_code_id' => $qrCode->id,
+                'status' => 'completed',
+                'payment_details' => null,
+            ]);
+
+            // Mark all unpaid orders for the table as paid
+            $orders = $ordersQuery->get();
+            foreach ($orders as $o) {
+                $o->update(['is_paid' => true]);
+            }
+
+            // Mark the QR code as checked (status value supported by enum) since payment has been recorded
+            $qrCode->update(['status' => 'checked']);
+        });
+
+        // Return success response including some payment info
+        return $this->slipResponse($request, true, 'Slip verified and payment recorded.', [
+            'verification' => $verification,
+            'payment_id' => $payment ? $payment->id : null,
+            'amount' => $expectedAmount,
+        ], 200);
+
     }
 
     /**
-     * Perform slip verification (DEV bypass supported). Returns verification array on success or throws on failure.
+     * Perform slip verification (DEV bypass supported). Returns verification array on success or throws on failure. Also create payment record
      * @param  Request  $request  used to inspect headers/context
      * @param  mixed    $payload  UploadedFile|string (url, base64 data url, raw QR text)
      * @param  float    $expectedAmount Amount that must match verification result (0 to skip strict check)

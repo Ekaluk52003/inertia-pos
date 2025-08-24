@@ -2,8 +2,8 @@
 import PromptPayQRCode from '@/components/PromptPayQRCode.vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useCartStore } from '@/stores/cartStore';
-import { useForm } from '@inertiajs/vue3';
-import { CheckCircle2, Receipt } from 'lucide-vue-next';
+import { router, useForm } from '@inertiajs/vue3';
+import { Receipt } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
 
 interface Props {
@@ -36,36 +36,34 @@ const slipMessage = ref<string>('');
 const slipInputRef = ref<HTMLInputElement | null>(null);
 
 // Inertia form for slip verification (uses FormData automatically when file present)
+// include items, restaurantCode and tableCode because server expects them
 const slipForm = useForm({
     slip_image: null as File | null,
     amount: 0,
+    items: [] as any[],
+    restaurantCode: props.restaurant?.id ?? null,
+    tableCode: props.table?.code ?? null,
 });
 
 const handleSlipUpload = (e: Event) => {
-    const input = e.target as HTMLInputElement;
-    if (!input || !input.files || input.files.length === 0) {
-        return;
-    }
-    const file = input.files[0];
-    // Basic client-side guards
-    if (!file.type.startsWith('image/')) {
-        slipStatus.value = 'error';
-        slipMessage.value = 'Please select an image file.';
-        return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-        // 5MB limit (adjust as needed)
-        slipStatus.value = 'error';
-        slipMessage.value = 'Image too large (max 5MB).';
-        return;
+    const input = e.target as HTMLInputElement | null;
+    const file = input?.files?.[0] ?? null;
+
+    if (!file) {
+        return; // no file selected (dialog cancelled)
     }
 
-    slipFileName.value = file.name || '';
-    slipStatus.value = 'pending';
-    slipMessage.value = 'Uploading…';
+    // Populate form fields required/used by backend validation
+    slipFileName.value = file.name;
+    slipForm.slip_image = file; // triggers FormData usage
+    slipForm.restaurantCode = (props as any)?.restaurant?.id ?? null; // backend accepts nullable
+    slipForm.tableCode = (props as any)?.table?.code ?? null; // backend accepts nullable
+    // Optional context (not required by validation but can be useful)
+    slipForm.amount = invoiceTotal.value;
+    slipForm.items = [];
 
-    slipForm.slip_image = file;
-    slipForm.amount = Number(invoiceTotal.value) || 0;
+    // Notify parent that an upload started
+    emit('slip-upload', { slip: '', fileName: file.name });
 
     slipForm.post(route('public.slip.verify'), {
         forceFormData: true,
@@ -75,13 +73,12 @@ const handleSlipUpload = (e: Event) => {
             slipMessage.value = 'Verifying…';
         },
         onError: (errors) => {
-            const first = Object.values(errors)[0] as string | undefined;
+            const first = (Object.values(errors)[0] as string | undefined) || '';
             slipStatus.value = 'error';
             slipMessage.value = first || 'Verification failed';
             emit('slip-verified', { success: false, error: errors });
         },
         onSuccess: (page: any) => {
-            // Access shared flash data
             const flash = page.props?.flash || {};
             const slipFlash = flash.slip_verification;
             if (slipFlash && slipFlash.message) {
@@ -98,11 +95,16 @@ const handleSlipUpload = (e: Event) => {
                 slipStatus.value = 'success';
                 slipMessage.value = 'Verified';
             }
+
+            // Refresh current page props so invoice/orders reflect new is_paid and QR status
+            if (slipStatus.value === 'success') {
+                router.reload();
+            }
         },
         onFinish: () => {
-            // Clear file input value so same file can be re-selected
-            if (input) {
-                input.value = '';
+            // Clear the input so the same file can be re-selected if needed
+            if (slipInputRef.value) {
+                slipInputRef.value.value = '';
             }
         },
     });
@@ -169,41 +171,34 @@ const baseUnitPrice = (item: any): number => {
     return Number(item.price ?? 0);
 };
 
-// Computed properties for display
-const invoiceTitle = computed(() => {
-    if (anyPaymentRecorded.value || cartStore.isBilled) {
-        return 'Invoice - Payment Received';
-    }
-
-    return 'Invoice - Please Pay';
-});
-
 const statusMessage = computed(() => {
-    if (anyPaymentRecorded.value || cartStore.isBilled) {
-        return 'Payment was received';
-    }
-
-    return 'Bill requested - please pay when ready';
+    // Static status message — keep minimal so order row statuses show payment tracking
+    return '';
 });
 
 const statusIcon = computed(() => {
-    return anyPaymentRecorded.value || cartStore.isBilled ? CheckCircle2 : Receipt;
+    // static icon for invoice header; order-level paid/unpaid shown per-order
+    return Receipt;
 });
 
 const statusColor = computed(() => {
-    return anyPaymentRecorded.value || cartStore.isBilled ? 'text-green-600' : 'text-blue-600';
+    return 'text-blue-600';
 });
 
-// Determine whether any payment record exists for the orders shown on the invoice.
-const anyPaymentRecorded = computed(() => {
-    // Check ordersForInvoice for explicit paid flags, payments array, or payment_count
-    return ordersForInvoice.value.some((o: any) => {
-        if (!o) return false;
-        if (o.is_paid) return true;
-        if (o.payments && Array.isArray(o.payments) && o.payments.length > 0) return true;
-        if (o.payment_count && Number(o.payment_count) > 0) return true;
-        return false;
-    });
+// Normalize restaurant pay-before flag: accept either camelCase or snake_case from server
+const isPayBefore = computed(() => {
+    if (!props.restaurant) return false;
+    return (props.restaurant as any).payBefore ?? (props.restaurant as any).pay_before ?? false;
+});
+
+// Show prompt-pay QR only when the QR code status is explicitly 'billing'
+const showPaymentQRLocal = computed(() => {
+    // Prefer explicit table qr_code (server-provided), fallback to active order qr_code
+    const tableQrStatus = (props.table as any)?.qr_code?.status;
+    if (tableQrStatus === 'billing') return true;
+
+    const activeQrStatus = cartStore.activeOrder?.qr_code?.status;
+    return activeQrStatus === 'billing';
 });
 
 // Build list of orders to include on the invoice: include the activeOrder if present
@@ -272,13 +267,10 @@ const orderTotal = (ord: any): number => {
                 <div class="mb-4 flex justify-center">
                     <component :is="statusIcon" :class="[statusColor, 'h-12 w-12']" />
                 </div>
-                <CardTitle class="text-2xl">{{ invoiceTitle }}</CardTitle>
+                <CardTitle class="text-2xl">Invoice</CardTitle>
                 <p class="mt-2 text-muted-foreground">{{ statusMessage }}</p>
 
-                <!-- PAID Stamp when any payment record exists for these orders -->
-                <div v-if="anyPaymentRecorded" class="mt-4">
-                    <div class="inline-block rounded-lg border-2 border-green-300 bg-green-100 px-4 py-2 font-bold text-green-800">PAID</div>
-                </div>
+                <!-- Order-level payment status shown per-order; no global PAID stamp -->
             </CardHeader>
 
             <CardContent>
@@ -347,8 +339,8 @@ const orderTotal = (ord: any): number => {
                     </div>
                 </div>
 
-                <!-- Payment QR Code (only for pay_after restaurants in billing status and no recorded payments) -->
-                <div v-if="showPaymentQr && !anyPaymentRecorded" class="mt-8 text-center">
+                <!-- Payment QR Code (only for pay_after restaurants when QR status === 'billing') -->
+                <div v-if="showPaymentQRLocal" class="mt-8 text-center">
                     <div class="rounded-lg bg-gray-50 p-6">
                         <h5 class="mb-4 font-semibold">Scan to Pay</h5>
                         <div class="mb-4 flex justify-center">
@@ -400,20 +392,7 @@ const orderTotal = (ord: any): number => {
                     </div>
                 </div>
 
-                <!-- Payment confirmation message -->
-                <div v-if="cartStore.isBilled || anyPaymentRecorded" class="mt-8 text-center">
-                    <div class="rounded-lg border border-green-200 bg-green-50 p-4">
-                        <div class="mb-2 flex items-center justify-center">
-                            <CheckCircle2 class="mr-2 h-6 w-6 text-green-600" />
-                            <span class="font-semibold text-green-800">Payment Confirmed</span>
-                        </div>
-                        <p class="text-sm text-green-700">
-                            {{
-                                anyPaymentRecorded ? 'Payment was received for these orders.' : 'Thank you for your payment. Your order is complete!'
-                            }}
-                        </p>
-                    </div>
-                </div>
+                <!-- Payment confirmation message removed: invoice only shows order status per-order -->
 
                 <!-- Footer message -->
                 <div class="mt-8 text-center text-sm text-muted-foreground">
