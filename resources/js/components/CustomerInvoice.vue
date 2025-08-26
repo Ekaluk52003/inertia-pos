@@ -211,6 +211,12 @@ const baseUnitPrice = (item: any): number => {
     return Number(item.price ?? 0);
 };
 
+// Sum of option additional prices (per unit)
+const optionExtras = (item: any): number => {
+    if (!item || !item.options || !Array.isArray(item.options)) return 0;
+    return item.options.reduce((s: number, o: any) => s + Number(o.additional_price || 0), 0);
+};
+
 const statusMessage = computed(() => {
     // Static status message — keep minimal so order row statuses show payment tracking
     return '';
@@ -351,6 +357,13 @@ const orderTotal = (ord: any): number => {
                                             {{ option.choices?.join(', ') || option.option_name }}
                                             <span v-if="option.additional_price > 0"> (+{{ formatPrice(option.additional_price) }}) </span>
                                         </div>
+                                    </div>
+
+                                    <!-- Show base price and extras per unit -->
+                                    <div class="mt-1 text-xs text-muted-foreground">
+                                        <span class="font-medium">Unit:</span>
+                                        {{ formatPrice(baseUnitPrice(item)) }}
+                                        <span v-if="optionExtras(item) > 0"> + extras {{ formatPrice(optionExtras(item)) }} per unit</span>
                                     </div>
 
                                     <div v-if="item.special_instructions" class="mt-1 text-xs text-muted-foreground italic">
