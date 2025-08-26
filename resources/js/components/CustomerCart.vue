@@ -625,7 +625,7 @@ const submitOrder = () => {
                                         Retry
                                     </button>
                                 </div>
-                                <div v-if="errors.slip_image" class="text-xs text-red-500">{{ errors.slip_image }}</div>
+                            
                             </div>
                             <div class="flex justify-end">
                                 <Button

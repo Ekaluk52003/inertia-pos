@@ -636,8 +636,15 @@ class OrderController extends Controller
             return $this->slipResponse($request, false, 'No unpaid orders found for this table.', null, 422);
         }
 
-        // Verify slip with expected amount
-        $verification = $this->verifySlipPayload($request, $payload, $expectedAmount);
+        // Verify slip with expected amount. Catch any verification exceptions and
+        // return a graceful slipResponse so the client receives a structured
+        // error instead of a 500 Internal Server Error page.
+        try {
+            $verification = $this->verifySlipPayload($request, $payload, $expectedAmount);
+        } catch (\Throwable $e) {
+            Log::error('verifySlip exception', ['message' => $e->getMessage()]);
+            return $this->slipResponse($request, false, 'Payment verification failed: '.$e->getMessage(), null, 422);
+        }
 
         // If verification succeeds, create a payment record and mark all relevant orders as paid
         $payment = null;
