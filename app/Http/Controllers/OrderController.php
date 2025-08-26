@@ -450,11 +450,12 @@ class OrderController extends Controller
 
                     $isPaid = true;
                 } catch (\Throwable $e) {
+                    // Show the provider message directly — verifySlipPayload now throws the API message
                     return redirect()->route('public.menu', [
                         'restaurantCode' => $restaurantCode,
                         'tableCode' => $tableCode,
                     ])->withErrors([
-                        isset($validated['slip_image']) ? 'slip_image' : 'qr_code_data' => 'Payment verification failed: '.$e->getMessage(),
+                        isset($validated['slip_image']) ? 'slip_image' : 'qr_code_data' => $e->getMessage(),
                     ])->with([
                         'cart' => $validated['items'],
                     ]);
@@ -643,7 +644,7 @@ class OrderController extends Controller
             $verification = $this->verifySlipPayload($request, $payload, $expectedAmount);
         } catch (\Throwable $e) {
             Log::error('verifySlip exception', ['message' => $e->getMessage()]);
-            return $this->slipResponse($request, false, 'Payment verification failed: '.$e->getMessage(), null, 422);
+            return $this->slipResponse($request, false, $e->getMessage(), null, 422);
         }
 
         // If verification succeeds, create a payment record and mark all relevant orders as paid
@@ -795,15 +796,15 @@ class OrderController extends Controller
         if (! $response || ! $response->successful()) {
             $body = $response ? $response->json() : [];
             $msg = $body['message'] ?? 'SlipOK request failed';
-            $code = $body['code'] ?? 'UNKNOWN';
-            throw new \Exception("SlipOK API Error ($code): $msg");
+            // Throw only the provider message so callers can present it directly to users
+            throw new \Exception($msg);
         }
 
         $json = $response->json();
         if (! ($json['success'] ?? false)) {
             $msg = $json['message'] ?? 'Slip verification failed';
-            $code = $json['code'] ?? 'INVALID';
-            throw new \Exception("SlipOK Verification Error ($code): $msg");
+            // Throw only the provider message
+            throw new \Exception($msg);
         }
 
         $verified = $json['data'] ?? [];
@@ -932,6 +933,8 @@ class OrderController extends Controller
             'data' => $data,
         ], $status);
     }
+
+    // ...existing code...
 
 
 
